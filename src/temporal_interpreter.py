@@ -114,8 +114,25 @@ def process_frame_batch(frame_paths, question, model, processor, show_visualizat
         attention_mask = inputs["attention_mask"]
         image_sizes = inputs['image_sizes']
 
-        # Get model prediction
+        # Get model prediction - generate complete answer
         with torch.no_grad():
+            # Generate complete answer
+            generated_ids = model.generate(
+                pixel_values=pixel_values,
+                input_ids=input_ids,
+                image_sizes=image_sizes,
+                attention_mask=attention_mask,
+                max_new_tokens=20,
+                do_sample=False,
+                pad_token_id=processor.tokenizer.pad_token_id
+            )
+
+            # Decode the generated answer
+            prompt_length = input_ids.shape[1]
+            generated_tokens = generated_ids[0, prompt_length:]
+            predicted_answer = processor.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+
+            # Get logits for first token to compute attributions and alternatives
             outputs = model(
                 pixel_values=pixel_values,
                 input_ids=input_ids,
@@ -123,15 +140,15 @@ def process_frame_batch(frame_paths, question, model, processor, show_visualizat
                 attention_mask=attention_mask
             )
 
-        # Get logits and predictions
+        # Get logits and predictions for first token
         logits = outputs.logits[:, -1, :]
         probs = torch.softmax(logits, dim=-1)
 
-        score, _ = torch.max(probs, dim=-1)
-        predicted_token_id = torch.argmax(logits, dim=-1)
-        predicted_token = processor.tokenizer.decode(predicted_token_id).strip()
+        # Get first token ID and confidence
+        first_token_id = generated_tokens[0] if len(generated_tokens) > 0 else torch.argmax(logits, dim=-1).item()
+        confidence_score = probs[0, first_token_id].item()
 
-        # Get top-5 predictions
+        # Get top-5 alternative first tokens
         top_probs, top_indices = torch.topk(probs[0], k=5)
         top_predictions = [
             (processor.tokenizer.decode(token_id).strip(), prob.item())
@@ -165,7 +182,7 @@ def process_frame_batch(frame_paths, question, model, processor, show_visualizat
             inputs=pixel_values,
             baselines=pixel_values_baseline,
             additional_forward_args=(input_ids, image_sizes, attention_mask),
-            target=predicted_token_id,
+            target=first_token_id,
             n_steps=5,
             internal_batch_size=1,
         )
@@ -179,8 +196,8 @@ def process_frame_batch(frame_paths, question, model, processor, show_visualizat
         result = {
             'frame_idx': frame_idx,
             'frame_path': frame_path,
-            'prediction': predicted_token,
-            'confidence': score[0].item(),
+            'prediction': predicted_answer,
+            'confidence': confidence_score,
             'top_predictions': top_predictions,
             'attributions': attributions_img,
             'original_image': np.asarray(img)
@@ -194,7 +211,7 @@ def process_frame_batch(frame_paths, question, model, processor, show_visualizat
                 result['original_image'],
                 ["original_image", "heat_map"],
                 ["all", "absolute_value"],
-                titles=[f"Frame {frame_idx}", f"Attribution: '{predicted_token}'"],
+                titles=[f"Frame {frame_idx}", f"Attribution: '{predicted_answer}'"],
                 cmap=default_cmap,
                 show_colorbar=True,
                 fig_size=(12, 6)

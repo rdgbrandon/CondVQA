@@ -82,8 +82,26 @@ def vqa_interpret(image_path, questions, model, processor, show_top_k=10):
             next_token_logits = outputs.logits[:, -1, :]
             return next_token_logits
 
-        # Get model prediction
-        print("\nAnalyzing predictions...")
+        # Get model prediction - generate complete answer
+        print("\nGenerating answer...")
+        with torch.no_grad():
+            # Generate complete answer (not just first token)
+            generated_ids = model.generate(
+                pixel_values=pixel_values,
+                input_ids=input_ids,
+                image_sizes=image_sizes,
+                attention_mask=attention_mask,
+                max_new_tokens=20,  # Allow up to 20 tokens for answer
+                do_sample=False,  # Use greedy decoding for consistency
+                pad_token_id=processor.tokenizer.pad_token_id
+            )
+
+            # Decode the generated answer (skip the prompt tokens)
+            prompt_length = input_ids.shape[1]
+            generated_tokens = generated_ids[0, prompt_length:]
+            predicted_answer = processor.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+
+        # Get logits for first generated token to show alternatives
         with torch.no_grad():
             outputs = model(
                 pixel_values=pixel_values,
@@ -92,22 +110,20 @@ def vqa_interpret(image_path, questions, model, processor, show_top_k=10):
                 attention_mask=attention_mask
             )
 
-        # Get logits for next token
         logits = outputs.logits[:, -1, :]
         probs = torch.softmax(logits, dim=-1)
 
-        # Get top prediction
-        score, _ = torch.max(probs, dim=-1)
-        predicted_token_id = torch.argmax(logits, dim=-1)
-        predicted_token = processor.tokenizer.decode(predicted_token_id).strip()
+        # Get confidence score for the first token of generated answer
+        first_token_id = generated_tokens[0] if len(generated_tokens) > 0 else 0
+        confidence_score = probs[0, first_token_id].item()
 
-        print(f"\nPredicted Answer: '{predicted_token}'")
-        print(f"Confidence Score: {score[0]:.4f} ({score[0].item()*100:.2f}%)")
+        print(f"\nPredicted Answer: '{predicted_answer}'")
+        print(f"Confidence Score: {confidence_score:.4f} ({confidence_score*100:.2f}%)")
 
-        # Get top-k tokens and their probabilities
+        # Get top-k tokens and their probabilities for alternative answers
         top_probs, top_indices = torch.topk(probs[0], k=show_top_k)
 
-        print(f"\nTop {show_top_k} most probable answers:")
+        print(f"\nTop {show_top_k} most probable first tokens:")
         print("-" * 50)
         for i, (prob, token_id) in enumerate(zip(top_probs, top_indices), 1):
             token_text = processor.tokenizer.decode(token_id).strip()
@@ -123,7 +139,7 @@ def vqa_interpret(image_path, questions, model, processor, show_top_k=10):
             inputs=pixel_values,
             baselines=pixel_values_baseline,
             additional_forward_args=(input_ids, image_sizes, attention_mask),
-            target=predicted_token_id,
+            target=first_token_id,
             n_steps=5,  # Reduced steps to save memory
             internal_batch_size=1,  # Process one step at a time
         )
@@ -142,7 +158,7 @@ def vqa_interpret(image_path, questions, model, processor, show_top_k=10):
             original_im_mat,
             ["original_image", "heat_map"],
             ["all", "absolute_value"],
-            titles=["Original Image", f"Attribution for '{predicted_token}'"],
+            titles=["Original Image", f"Attribution for '{predicted_answer}'"],
             cmap=default_cmap,
             show_colorbar=True,
             fig_size=(12, 6)
