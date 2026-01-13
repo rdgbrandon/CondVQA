@@ -9,20 +9,22 @@ This project uses the LLaVA vision-language model with Captum's Integrated Gradi
 - Vision-Language Model (LLaVA) for Visual Question Answering
 - Integrated Gradients for explainability
 - Heatmap visualizations showing which parts of the image influence predictions
+- **Temporal video analysis** - Process videos frame-by-frame with timeline visualizations
 - Optimized for Google Colab with 4-bit quantization
 
 ## Project Structure
 
 ```
-VLM_IG/
+TemporalVLM_IG/
 ├── src/
-│   ├── __init__.py           # Package initialization
-│   ├── model_loader.py       # Model loading utilities
-│   ├── utils.py              # Image processing utilities
-│   └── interpreter.py        # Main VQA interpretation logic
-├── run_colab.ipynb           # Simplified Colab notebook
-├── requirements.txt          # Python dependencies
-└── README.md                 # This file
+│   ├── __init__.py              # Package initialization
+│   ├── model_loader.py          # Model loading utilities
+│   ├── utils.py                 # Image processing utilities
+│   ├── interpreter.py           # Main VQA interpretation logic
+│   └── temporal_interpreter.py  # Temporal video analysis
+├── run_colab.ipynb              # Simplified Colab notebook
+├── requirements.txt             # Python dependencies
+└── README.md                    # This file
 ```
 
 ## Usage on Google Colab
@@ -51,6 +53,8 @@ Follow the cells in `run_colab.ipynb`:
 
 ### Example Usage
 
+#### Image Analysis
+
 ```python
 # After loading the model, upload an image and run:
 questions = [
@@ -68,6 +72,50 @@ vqa_interpret(
 )
 ```
 
+#### Video Analysis
+
+```python
+# After loading the model, upload a video and run:
+video_questions = [
+    "What is happening?",
+    "What object is visible?"
+]
+
+results = temporal_vqa_interpret(
+    video_path="your_uploaded_video.mp4",
+    questions=video_questions,
+    model=model,
+    processor=processor,
+    fps_sample=1,  # Sample 1 frame per second
+    max_frames=20,  # Process max 20 frames
+    show_frame_visualizations=False,  # Set True for individual frame heatmaps
+    show_timeline=True,  # Show timeline graphs
+    save_results=True  # Save reports to 'video_analysis' folder
+)
+```
+
+## Temporal Video Analysis Features
+
+The temporal video analysis module provides:
+
+1. **Smart Frame Extraction**: Automatically samples frames from videos at specified rates
+2. **Batch Processing**: Efficiently processes multiple frames with memory management
+3. **Timeline Visualizations**:
+   - Prediction timeline showing how answers change over time
+   - Confidence graphs tracking prediction certainty
+4. **Summary Reports**: Detailed frame-by-frame analysis with statistics
+5. **Optional Frame Heatmaps**: Individual attribution visualizations for each frame
+6. **Memory Optimization**: Automatic CUDA cache clearing between frames
+
+### Video Analysis Output
+
+When you run `temporal_vqa_interpret()`, you'll get:
+
+- **Timeline graphs**: Visual representation of predictions and confidence over time
+- **Text reports**: Frame-by-frame breakdown with top predictions for each frame
+- **Summary statistics**: Most common predictions, average confidence, unique answers
+- **Saved results**: All visualizations and reports saved to `video_analysis/` folder
+
 ## Local Development (VS Code)
 
 You can edit the code locally in VS Code and push changes to GitHub. The modular structure makes it easy to:
@@ -75,6 +123,7 @@ You can edit the code locally in VS Code and push changes to GitHub. The modular
 - Modify model parameters in `src/model_loader.py`
 - Add new utility functions in `src/utils.py`
 - Enhance the interpretation logic in `src/interpreter.py`
+- Extend temporal analysis in `src/temporal_interpreter.py`
 
 After making changes:
 ```bash
@@ -98,11 +147,28 @@ Then in Colab, pull the latest changes:
 
 ### `vqa_interpret()`
 
+Single image analysis with Integrated Gradients.
+
 - `image_path` (str): Path to the uploaded image file
 - `questions` (list): List of questions to ask about the image
 - `model`: Loaded LLaVA model
 - `processor`: Model processor
 - `show_top_k` (int): Number of top probable answers to display (default: 10)
+
+### `temporal_vqa_interpret()`
+
+Temporal video analysis with frame-by-frame processing and timeline visualizations.
+
+- `video_path` (str): Path to the video file
+- `questions` (list): List of questions to ask about the video
+- `model`: Loaded LLaVA model
+- `processor`: Model processor
+- `fps_sample` (float): Sample rate in frames per second (1 = 1 frame/sec, 0.5 = 1 frame/2 sec)
+- `max_frames` (int): Maximum number of frames to process (None = all sampled frames)
+- `output_dir` (str): Directory to save results (default: "video_analysis")
+- `show_frame_visualizations` (bool): Show heatmap for each individual frame (default: False)
+- `show_timeline` (bool): Show timeline graphs of predictions over time (default: True)
+- `save_results` (bool): Save reports and visualizations to files (default: True)
 
 ## Requirements
 
@@ -132,7 +198,14 @@ The code includes several optimizations for Colab's memory constraints:
 
 ### Attribution Computation Slow
 - This is normal; Integrated Gradients requires multiple forward passes
-- Each question takes 1-2 minutes depending on GPU
+- Each image question takes 1-2 minutes depending on GPU
+- Video processing scales with number of frames sampled
+
+### Video Processing Tips
+- Start with `max_frames=10` to test, then increase for full analysis
+- Use `fps_sample=0.5` or lower for long videos (samples 1 frame every 2+ seconds)
+- Set `show_frame_visualizations=False` for faster processing
+- Video analysis saves frames to disk, which can use storage space
 
 ## License
 

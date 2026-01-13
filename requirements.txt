@@ -7,3 +7,5 @@ torch
 pillow
 matplotlib
 requests
+opencv-python
+tqdm
