@@ -23,8 +23,8 @@ def get_text_embeddings_with_grad(model, input_ids, pixel_values, image_sizes, a
     Returns:
         Text embeddings tensor with gradients enabled
     """
-    # Get the embedding layer
-    embed_layer = model.language_model.model.embed_tokens
+    # Get the embedding layer (Qwen2 model doesn't have intermediate .model)
+    embed_layer = model.language_model.embed_tokens
 
     # Get embeddings with gradients
     embeddings = embed_layer(input_ids)
@@ -113,29 +113,17 @@ def compute_text_attributions(
         confidence_score = probs[0, first_token_id].item()
 
     # Use LayerIntegratedGradients for text embeddings
-    embed_layer = model.language_model.model.embed_tokens
-
-    def forward_func(input_embeds):
-        """Forward pass with embeddings instead of token IDs"""
-        # Need to bypass the embedding layer and use embeddings directly
-        outputs = model.language_model.model(
-            inputs_embeds=input_embeds,
-            attention_mask=attention_mask,
-            return_dict=True
-        )
-        logits = model.language_model.lm_head(outputs.last_hidden_state)
-        next_token_logits = logits[:, -1, :]
-        return next_token_logits
-
-    # Get baseline embeddings (zeros)
-    with torch.no_grad():
-        input_embeds = embed_layer(input_ids)
-
-    baseline_embeds = torch.zeros_like(input_embeds)
+    embed_layer = model.language_model.embed_tokens
 
     # Compute text attributions using LayerIntegratedGradients
+    # This computes gradients with respect to the embedding layer
     lig = LayerIntegratedGradients(
-        lambda ids: forward_func(embed_layer(ids)),
+        lambda ids: model(
+            pixel_values=pixel_values,
+            input_ids=ids,
+            image_sizes=image_sizes,
+            attention_mask=attention_mask
+        ).logits[:, -1, :],
         embed_layer
     )
 
@@ -266,7 +254,7 @@ def compute_joint_attributions(
     )
 
     # Compute text attributions
-    embed_layer = model.language_model.model.embed_tokens
+    embed_layer = model.language_model.embed_tokens
 
     lig_text = LayerIntegratedGradients(
         lambda ids: model(
