@@ -46,7 +46,7 @@ def vqa_interpret(image_path, questions, model, processor, show_top_k=10, includ
                 "role": "user",
                 "content": [
                     {"type": "image"},
-                    {"type": "text", "text": "Answer with one word only."},
+                    {"type": "text", "text": "Answer briefly."},
                     {"type": "text", "text": question},
                 ],
             },

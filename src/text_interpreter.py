@@ -43,7 +43,7 @@ def compute_text_attributions(
             "role": "user",
             "content": [
                 {"type": "image"},
-                {"type": "text", "text": "Answer with one word only."},
+                {"type": "text", "text": "Answer briefly."},
                 {"type": "text", "text": question},
             ],
         },
@@ -170,7 +170,7 @@ def compute_joint_attributions(
             "role": "user",
             "content": [
                 {"type": "image"},
-                {"type": "text", "text": "Answer with one word only."},
+                {"type": "text", "text": "Answer briefly."},
                 {"type": "text", "text": question},
             ],
         },
@@ -303,7 +303,7 @@ def visualize_text_attributions(result, save_path=None):
 
     for i, (token, attr) in enumerate(zip(tokens, norm_attrs)):
         token_stripped = token.strip()
-        if token_stripped in ['<s>', '</s>', '<pad>', '<image>', '<|im_start|>', '<|im_end|>', 'user', '']:
+        if token_stripped in ['<s>', '</s>', '<pad>', '<image>', '<|im_start|>', '<|im_end|>', 'user', 'assistant', '']:
             continue
 
         color = cmap((attr + 1) / 2)

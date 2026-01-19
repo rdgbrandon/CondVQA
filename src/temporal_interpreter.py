@@ -100,7 +100,7 @@ def process_frame_batch(frame_paths, question, model, processor, show_visualizat
                 "role": "user",
                 "content": [
                     {"type": "image"},
-                    {"type": "text", "text": "Answer with one word only."},
+                    {"type": "text", "text": "Answer briefly."},
                     {"type": "text", "text": question},
                 ],
             },
