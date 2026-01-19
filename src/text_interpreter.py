@@ -4,33 +4,9 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
-from captum.attr import IntegratedGradients, LayerIntegratedGradients
+from captum.attr import IntegratedGradients
 
 from .utils import load_image_from_file
-
-
-def get_text_embeddings_with_grad(model, input_ids, pixel_values, image_sizes, attention_mask):
-    """
-    Get text embeddings with gradient tracking enabled
-
-    Args:
-        model: The vision-language model
-        input_ids: Input token IDs
-        pixel_values: Image pixel values
-        image_sizes: Image size information
-        attention_mask: Attention mask
-
-    Returns:
-        Text embeddings tensor with gradients enabled
-    """
-    # Get the embedding layer (Qwen2 model doesn't have intermediate .model)
-    embed_layer = model.language_model.embed_tokens
-
-    # Get embeddings with gradients
-    embeddings = embed_layer(input_ids)
-    embeddings.requires_grad_(True)
-
-    return embeddings
 
 
 def compute_text_attributions(
@@ -112,31 +88,40 @@ def compute_text_attributions(
         first_token_id = generated_tokens[0] if len(generated_tokens) > 0 else torch.argmax(logits, dim=-1).item()
         confidence_score = probs[0, first_token_id].item()
 
-    # Use LayerIntegratedGradients for text embeddings
+    # Compute text attributions using a gradient-based approach
+    # We'll compute input gradients for each token position
+
+    # Get token embeddings
     embed_layer = model.language_model.embed_tokens
 
-    # Compute text attributions using LayerIntegratedGradients
-    # This computes gradients with respect to the embedding layer
-    lig = LayerIntegratedGradients(
-        lambda ids: model(
-            pixel_values=pixel_values,
-            input_ids=ids,
-            image_sizes=image_sizes,
-            attention_mask=attention_mask
-        ).logits[:, -1, :],
-        embed_layer
+    # Enable gradients for input_ids by converting to embeddings
+    input_embeds = embed_layer(input_ids).detach()
+    input_embeds.requires_grad_(True)
+
+    # Forward pass with embeddings
+    # Note: LLaVA processes image and text together, so we pass embeddings directly
+    outputs = model(
+        pixel_values=pixel_values,
+        inputs_embeds=input_embeds,
+        image_sizes=image_sizes,
+        attention_mask=attention_mask
     )
 
-    text_attrs = lig.attribute(
-        inputs=input_ids,
-        baselines=torch.zeros_like(input_ids),
-        target=first_token_id,
-        n_steps=n_steps,
-        return_convergence_delta=False
-    )
+    # Get logits and compute loss for target token
+    logits = outputs.logits[:, -1, :]
+    target_logit = logits[0, first_token_id]
+
+    # Backward pass to get gradients
+    target_logit.backward()
+
+    # Get gradients with respect to input embeddings
+    text_grads = input_embeds.grad
+
+    # Compute attribution as gradient * input (gradient x input method)
+    text_attrs = (text_grads * input_embeds).sum(dim=-1)
 
     # Sum across embedding dimension to get per-token attribution
-    text_attrs_sum = text_attrs.sum(dim=-1).squeeze(0).cpu().detach().numpy()
+    text_attrs_sum = text_attrs.squeeze(0).cpu().detach().numpy()
 
     # Get token strings
     tokens = [processor.tokenizer.decode([token_id]) for token_id in input_ids[0]]
@@ -253,26 +238,31 @@ def compute_joint_attributions(
         internal_batch_size=1,
     )
 
-    # Compute text attributions
+    # Compute text attributions using gradient-based approach
     embed_layer = model.language_model.embed_tokens
 
-    lig_text = LayerIntegratedGradients(
-        lambda ids: model(
-            pixel_values=pixel_values,
-            input_ids=ids,
-            image_sizes=image_sizes,
-            attention_mask=attention_mask,
-        ).logits[:, -1, :],
-        embed_layer
+    # Get text embeddings with gradients
+    input_embeds = embed_layer(input_ids).detach()
+    input_embeds.requires_grad_(True)
+
+    # Forward pass with embeddings
+    outputs_text = model(
+        pixel_values=pixel_values,
+        inputs_embeds=input_embeds,
+        image_sizes=image_sizes,
+        attention_mask=attention_mask
     )
 
-    text_attrs = lig_text.attribute(
-        inputs=input_ids,
-        baselines=torch.zeros_like(input_ids),
-        target=first_token_id,
-        n_steps=n_steps,
-        return_convergence_delta=False
-    )
+    # Get logits and compute loss for target token
+    logits_text = outputs_text.logits[:, -1, :]
+    target_logit_text = logits_text[0, first_token_id]
+
+    # Backward pass
+    target_logit_text.backward()
+
+    # Get text attributions
+    text_grads = input_embeds.grad
+    text_attrs = (text_grads * input_embeds).sum(dim=-1)
 
     # Calculate total attributions (sum of absolute values)
     image_attr_total = torch.abs(image_attrs).sum().item()
