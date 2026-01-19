@@ -100,15 +100,17 @@ results = temporal_vqa_interpret(
 #### Text Attribution Analysis
 
 ```python
-# Analyze which words in the question influence the prediction
-question = "What color is the cat?"
+questions = [
+    "What color is the cat?",
+    "Where is the cat?"
+]
 
 text_results = text_vqa_interpret(
     image_path="your_uploaded_image.jpg",
-    question=question,
+    questions=questions,
     model=model,
     processor=processor,
-    mode='both',  # 'text' = text-only, 'joint' = image vs text, 'both' = both
+    mode='both',
     n_steps=10,
     show_visualizations=True
 )
@@ -219,7 +221,7 @@ Temporal video analysis with frame-by-frame processing and timeline visualizatio
 Text and joint attribution analysis showing which question words matter and image vs text contribution.
 
 - `image_path` (str): Path to the image file
-- `question` (str): Single question to analyze
+- `questions` (list): List of questions to analyze
 - `model`: Loaded LLaVA model
 - `processor`: Model processor
 - `mode` (str): Analysis mode - 'text' (text-only), 'joint' (image vs text), or 'both' (default: 'both')
