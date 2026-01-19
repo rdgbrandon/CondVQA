@@ -126,13 +126,30 @@ def compute_text_attributions(
     # Get token strings
     tokens = [processor.tokenizer.decode([token_id]) for token_id in input_ids[0]]
 
+    # Separate image and text tokens for analysis
+    image_token_indices = [i for i, t in enumerate(tokens) if t.strip() == '<image>']
+    text_token_indices = [i for i, t in enumerate(tokens)
+                          if t.strip() not in ['<image>', '<s>', '</s>', '<pad>', '<|im_start|>', '<|im_end|>', 'user', '']]
+
+    # Calculate attribution breakdown
+    image_token_attr = sum(abs(text_attrs_sum[i]) for i in image_token_indices) if image_token_indices else 0
+    text_token_attr = sum(abs(text_attrs_sum[i]) for i in text_token_indices) if text_token_indices else 0
+    total_attr = image_token_attr + text_token_attr
+
+    image_pct = (image_token_attr / total_attr * 100) if total_attr > 0 else 0
+    text_pct = (text_token_attr / total_attr * 100) if total_attr > 0 else 0
+
     return {
         'predicted_answer': predicted_answer,
         'confidence': confidence_score,
         'text_attributions': text_attrs_sum,
         'tokens': tokens,
         'token_ids': input_ids[0].cpu().numpy(),
-        'question': question
+        'question': question,
+        'image_token_attribution': image_token_attr,
+        'text_token_attribution': text_token_attr,
+        'image_token_percentage': image_pct,
+        'text_token_percentage': text_pct
     }
 
 
@@ -321,8 +338,9 @@ def visualize_text_attributions(result, save_path=None):
     y_pos = 0.5
 
     for i, (token, attr) in enumerate(zip(tokens, norm_attrs)):
-        # Skip special tokens for cleaner visualization
-        if token.strip() in ['<s>', '</s>', '<pad>']:
+        # Skip special tokens and image tokens for cleaner visualization
+        token_stripped = token.strip()
+        if token_stripped in ['<s>', '</s>', '<pad>', '<image>', '<|im_start|>', '<|im_end|>', 'user', '']:
             continue
 
         # Get color based on attribution
@@ -352,8 +370,9 @@ def visualize_text_attributions(result, save_path=None):
     cbar.set_label('Attribution (Blue = Negative, Red = Positive)', fontsize=10)
 
     # Plot 2: Bar chart of attributions
-    # Filter out special tokens
-    valid_indices = [i for i, t in enumerate(tokens) if t.strip() not in ['<s>', '</s>', '<pad>']]
+    # Filter out special tokens and image tokens
+    valid_indices = [i for i, t in enumerate(tokens)
+                     if t.strip() not in ['<s>', '</s>', '<pad>', '<image>', '<|im_start|>', '<|im_end|>', 'user', '']]
     filtered_tokens = [tokens[i] for i in valid_indices]
     filtered_attrs = [attributions[i] for i in valid_indices]
 
@@ -475,6 +494,9 @@ def text_vqa_interpret(
 
         print(f"\nPredicted Answer: '{text_result['predicted_answer']}'")
         print(f"Confidence: {text_result['confidence']:.4f} ({text_result['confidence']*100:.2f}%)")
+        print(f"\nToken Attribution Breakdown:")
+        print(f"  Image Tokens: {text_result['image_token_percentage']:.1f}%")
+        print(f"  Text Tokens: {text_result['text_token_percentage']:.1f}%")
 
         if show_visualizations:
             save_path = f"{save_dir}/text_attribution.png" if save_dir else None
