@@ -372,7 +372,7 @@ def visualize_joint_attributions(result, save_path=None):
 
     sizes = [image_pct, text_pct]
     labels = [f'Image\n{image_pct:.1f}%', f'Text\n{text_pct:.1f}%']
-    colors = ['
+    colors = ['#ff9999', '#66b3ff']
     explode = (0.05, 0.05)
 
     ax1.pie(sizes, explode=explode, labels=labels, colors=colors, autopct='',
