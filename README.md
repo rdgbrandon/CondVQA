@@ -8,7 +8,9 @@ This project uses the LLaVA vision-language model with Captum's Integrated Gradi
 
 - Vision-Language Model (LLaVA) for Visual Question Answering
 - Integrated Gradients for explainability
-- Heatmap visualizations showing which parts of the image influence predictions
+- **Image attribution** - Heatmap visualizations showing which parts of the image influence predictions
+- **Text attribution** - Analyze which words in your question matter most
+- **Joint attribution** - Compare image vs text contribution to predictions
 - **Temporal video analysis** - Process videos frame-by-frame with timeline visualizations
 - Optimized for Google Colab with 4-bit quantization
 
@@ -21,7 +23,8 @@ TemporalVLM_IG/
 │   ├── model_loader.py          # Model loading utilities
 │   ├── utils.py                 # Image processing utilities
 │   ├── interpreter.py           # Main VQA interpretation logic
-│   └── temporal_interpreter.py  # Temporal video analysis
+│   ├── temporal_interpreter.py  # Temporal video analysis
+│   └── text_interpreter.py      # Text & joint attribution analysis
 ├── run_colab.ipynb              # Simplified Colab notebook
 ├── requirements.txt             # Python dependencies
 └── README.md                    # This file
@@ -93,6 +96,47 @@ results = temporal_vqa_interpret(
     save_results=True  # Save reports to 'video_analysis' folder
 )
 ```
+
+#### Text Attribution Analysis
+
+```python
+# Analyze which words in the question influence the prediction
+question = "What color is the cat?"
+
+text_results = text_vqa_interpret(
+    image_path="your_uploaded_image.jpg",
+    question=question,
+    model=model,
+    processor=processor,
+    mode='both',  # 'text' = text-only, 'joint' = image vs text, 'both' = both
+    n_steps=10,
+    show_visualizations=True
+)
+```
+
+## Text Attribution Features
+
+The text attribution module provides two types of analysis:
+
+### 1. Text-Only Attribution
+Shows which words in your question are most important for the prediction:
+- **Color-coded visualization**: Words highlighted by importance (red = high, blue = low)
+- **Bar chart**: Attribution scores for each token
+- **Use case**: Understand which question words drive the answer
+
+Example insights:
+- For "What color is the cat?" → "color" and "cat" have high attribution
+- For "Is the person walking or running?" → "walking" and "running" are key
+
+### 2. Joint Image+Text Attribution
+Compares how much the image vs the question text contribute to the prediction:
+- **Pie chart**: Visual breakdown of image vs text contribution
+- **Percentage breakdown**: Quantitative comparison
+- **Use case**: Understand if the model relies more on visual or textual information
+
+Example insights:
+- "What color is X?" → High image contribution (needs to see the color)
+- "What is 2+2?" → High text contribution (purely textual reasoning)
 
 ## Temporal Video Analysis Features
 
@@ -169,6 +213,19 @@ Temporal video analysis with frame-by-frame processing and timeline visualizatio
 - `show_frame_visualizations` (bool): Show heatmap for each individual frame (default: False)
 - `show_timeline` (bool): Show timeline graphs of predictions over time (default: True)
 - `save_results` (bool): Save reports and visualizations to files (default: True)
+
+### `text_vqa_interpret()`
+
+Text and joint attribution analysis showing which question words matter and image vs text contribution.
+
+- `image_path` (str): Path to the image file
+- `question` (str): Single question to analyze
+- `model`: Loaded LLaVA model
+- `processor`: Model processor
+- `mode` (str): Analysis mode - 'text' (text-only), 'joint' (image vs text), or 'both' (default: 'both')
+- `n_steps` (int): Number of Integrated Gradients steps (default: 10)
+- `show_visualizations` (bool): Display visualizations (default: True)
+- `save_dir` (str): Optional directory to save visualizations (default: None)
 
 ## Requirements
 

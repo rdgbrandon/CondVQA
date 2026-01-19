@@ -7,9 +7,10 @@ from captum.attr import IntegratedGradients
 from captum.attr import visualization
 
 from .utils import load_image_from_file, replace_with_padding, setup_colormap
+from .text_interpreter import text_vqa_interpret
 
 
-def vqa_interpret(image_path, questions, model, processor, show_top_k=10):
+def vqa_interpret(image_path, questions, model, processor, show_top_k=10, include_text_attribution=False):
     """
     Visual Question Answering with Integrated Gradients attribution
 
@@ -19,6 +20,7 @@ def vqa_interpret(image_path, questions, model, processor, show_top_k=10):
         model: The vision-language model
         processor: The model's processor
         show_top_k: Number of top probable tokens to display (default: 10)
+        include_text_attribution: If True, also compute text and joint attributions (default: False)
     """
     # Get device from model
     device = next(model.parameters()).device
@@ -167,6 +169,18 @@ def vqa_interpret(image_path, questions, model, processor, show_top_k=10):
         plt.show()
 
         print("✓ Visualization complete")
+
+        # Optionally compute text attribution analysis
+        if include_text_attribution:
+            text_vqa_interpret(
+                image_path=image_path,
+                question=question,
+                model=model,
+                processor=processor,
+                mode='both',
+                n_steps=10,
+                show_visualizations=True
+            )
 
         # Clear cache after each question
         torch.cuda.empty_cache()
