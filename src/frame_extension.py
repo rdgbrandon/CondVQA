@@ -1,4 +1,4 @@
-"""Temporal video interpretation module for Visual Question Answering with Integrated Gradients"""
+"""Frame extension module for temporal video analysis with Integrated Gradients"""
 
 import os
 import cv2
@@ -10,7 +10,7 @@ from captum.attr import visualization
 from tqdm import tqdm
 
 from .utils import setup_colormap
-from .interpreter import compute_single_image_attribution
+from .image_interpreter import compute_single_image_attribution
 from .text_interpreter import compute_text_attributions, visualize_text_attributions
 
 
