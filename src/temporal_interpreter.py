@@ -10,6 +10,7 @@ from captum.attr import visualization
 from tqdm import tqdm
 
 from .utils import load_image_from_file, replace_with_padding, setup_colormap
+from .text_interpreter import compute_text_attributions
 
 
 def extract_frames(video_path, output_dir="frames", fps_sample=1, max_frames=None):
@@ -69,7 +70,7 @@ def extract_frames(video_path, output_dir="frames", fps_sample=1, max_frames=Non
     return frame_paths, video_fps, count
 
 
-def process_frame_batch(frame_paths, question, model, processor, show_visualizations=False):
+def process_frame_batch(frame_paths, question, model, processor, show_visualizations=False, include_text_attribution=False):
     """
     Process a batch of frames for a single question
 
@@ -79,6 +80,7 @@ def process_frame_batch(frame_paths, question, model, processor, show_visualizat
         model: The vision-language model
         processor: The model's processor
         show_visualizations: Whether to show heatmaps (False for efficiency)
+        include_text_attribution: Whether to compute text vs image attribution (default: False)
 
     Returns:
         list: List of results for each frame containing predictions and attributions
@@ -202,6 +204,15 @@ def process_frame_batch(frame_paths, question, model, processor, show_visualizat
             'attributions': attributions_img,
             'original_image': np.asarray(img)
         }
+
+        # Compute text attribution if requested
+        if include_text_attribution:
+            text_attr_result = compute_text_attributions(
+                frame_path, question, model, processor, n_steps=5
+            )
+            result['image_pct'] = text_attr_result['image_token_percentage']
+            result['text_pct'] = text_attr_result['text_token_percentage']
+
         results.append(result)
 
         # Optionally show visualization
@@ -238,8 +249,16 @@ def create_temporal_timeline(results, question, save_path=None):
     predictions = [r['prediction'] for r in results]
     confidences = [r['confidence'] for r in results]
 
-    # Create figure with two subplots
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 8))
+    # Check if text attribution data is available
+    has_text_attr = 'image_pct' in results[0]
+
+    # Create figure with 2 or 3 subplots
+    num_plots = 3 if has_text_attr else 2
+    fig, axes = plt.subplots(num_plots, 1, figsize=(14, 4 * num_plots))
+    if num_plots == 2:
+        ax1, ax2 = axes
+    else:
+        ax1, ax2, ax3 = axes
 
     # Plot 1: Predictions over time
     ax1.scatter(frame_indices, predictions, c=confidences, cmap='viridis', s=100, alpha=0.7)
@@ -259,6 +278,21 @@ def create_temporal_timeline(results, question, save_path=None):
     ax2.set_title('Prediction Confidence Over Time', fontsize=14, fontweight='bold')
     ax2.set_ylim([0, 1])
     ax2.grid(True, alpha=0.3)
+
+    # Plot 3: Image vs Text attribution (if available)
+    if has_text_attr:
+        image_pcts = [r['image_pct'] for r in results]
+        text_pcts = [r['text_pct'] for r in results]
+        ax3.plot(frame_indices, image_pcts, marker='o', linewidth=2, markersize=6, color='#ff9999', label='Image %')
+        ax3.plot(frame_indices, text_pcts, marker='s', linewidth=2, markersize=6, color='#66b3ff', label='Text %')
+        ax3.fill_between(frame_indices, image_pcts, alpha=0.3, color='#ff9999')
+        ax3.fill_between(frame_indices, text_pcts, alpha=0.3, color='#66b3ff')
+        ax3.set_xlabel('Frame Index', fontsize=12)
+        ax3.set_ylabel('Attribution %', fontsize=12)
+        ax3.set_title('Image vs Text Attribution Over Time', fontsize=14, fontweight='bold')
+        ax3.set_ylim([0, 100])
+        ax3.legend(loc='upper right')
+        ax3.grid(True, alpha=0.3)
 
     plt.tight_layout()
 
@@ -290,6 +324,8 @@ def create_summary_report(results, question, video_fps, save_path=None):
     report_lines.append("FRAME-BY-FRAME RESULTS")
     report_lines.append("-" * 70)
 
+    has_text_attr = 'image_pct' in results[0]
+
     for result in results:
         frame_idx = result['frame_idx']
         prediction = result['prediction']
@@ -297,6 +333,8 @@ def create_summary_report(results, question, video_fps, save_path=None):
 
         report_lines.append(f"\nFrame {frame_idx:04d}:")
         report_lines.append(f"  Prediction: '{prediction}' (Confidence: {confidence:.4f})")
+        if has_text_attr:
+            report_lines.append(f"  Attribution: Image {result['image_pct']:.1f}% | Text {result['text_pct']:.1f}%")
         report_lines.append(f"  Top 5 predictions:")
         for i, (token, prob) in enumerate(result['top_predictions'], 1):
             report_lines.append(f"    {i}. '{token}' - {prob:.4f} ({prob*100:.2f}%)")
@@ -313,6 +351,12 @@ def create_summary_report(results, question, video_fps, save_path=None):
     report_lines.append(f"\nUnique Predictions: {len(unique_predictions)}")
     report_lines.append(f"Predictions: {', '.join(unique_predictions)}")
     report_lines.append(f"Average Confidence: {avg_confidence:.4f} ({avg_confidence*100:.2f}%)")
+
+    # Text attribution stats (if available)
+    if has_text_attr:
+        avg_image_pct = np.mean([r['image_pct'] for r in results])
+        avg_text_pct = np.mean([r['text_pct'] for r in results])
+        report_lines.append(f"\nAverage Attribution: Image {avg_image_pct:.1f}% | Text {avg_text_pct:.1f}%")
 
     # Most common prediction
     from collections import Counter
@@ -341,7 +385,8 @@ def temporal_vqa_interpret(
     output_dir="video_analysis",
     show_frame_visualizations=False,
     show_timeline=True,
-    save_results=True
+    save_results=True,
+    include_text_attribution=False
 ):
     """
     Temporal Visual Question Answering with Integrated Gradients attribution
@@ -357,6 +402,7 @@ def temporal_vqa_interpret(
         show_frame_visualizations: Whether to show individual frame heatmaps (slow)
         show_timeline: Whether to show timeline visualizations
         save_results: Whether to save reports and visualizations
+        include_text_attribution: Whether to compute text vs image attribution per frame (default: False)
     """
     print(f"\n{'='*70}")
     print("TEMPORAL VIDEO ANALYSIS")
@@ -364,6 +410,7 @@ def temporal_vqa_interpret(
     print(f"Video: {video_path}")
     print(f"Questions: {len(questions)}")
     print(f"Sample Rate: {fps_sample} FPS")
+    print(f"Text Attribution: {'Enabled' if include_text_attribution else 'Disabled'}")
     print(f"{'='*70}\n")
 
     # Create output directory
@@ -397,7 +444,8 @@ def temporal_vqa_interpret(
             question,
             model,
             processor,
-            show_visualizations=show_frame_visualizations
+            show_visualizations=show_frame_visualizations,
+            include_text_attribution=include_text_attribution
         )
 
         all_results[question] = results
