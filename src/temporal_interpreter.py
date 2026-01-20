@@ -10,7 +10,7 @@ from captum.attr import visualization
 from tqdm import tqdm
 
 from .utils import load_image_from_file, replace_with_padding, setup_colormap
-from .text_interpreter import compute_text_attributions
+from .text_interpreter import compute_text_attributions, visualize_text_attributions
 
 
 def extract_frames(video_path, output_dir="frames", fps_sample=1, max_frames=None):
@@ -212,6 +212,11 @@ def process_frame_batch(frame_paths, question, model, processor, show_visualizat
             )
             result['image_pct'] = text_attr_result['image_token_percentage']
             result['text_pct'] = text_attr_result['text_token_percentage']
+            result['text_attr_result'] = text_attr_result
+
+            # Show text attribution visualization if requested
+            if show_visualizations:
+                visualize_text_attributions(text_attr_result)
 
         results.append(result)
 
