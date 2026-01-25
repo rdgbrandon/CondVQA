@@ -74,6 +74,11 @@ Classification Rules:
 
 CRITICAL: Questions like "When there is X" are CONDITIONAL, not TIMESTAMP!
 
+IMPORTANT OUTPUT FORMAT:
+- First line: Just the type (CONDITIONAL, TIMESTAMP, or SIMPLE)
+- Following lines: Field-value pairs
+- For CONDITIONAL, you MUST provide both CONDITION and QUESTION on separate lines
+
 Examples:
 
 Input: "When there is a dog in the frame, what color is the dog?"
@@ -106,7 +111,8 @@ CONDITION: Is there a car?
 QUESTION: Is it red or blue?
 
 Now classify: "{question}"
-Output in the exact format above (TYPE on first line, then field:value pairs):"""
+
+Your output (start with just CONDITIONAL, TIMESTAMP, or SIMPLE on the first line):"""
         }
     ]
 
@@ -154,7 +160,11 @@ Output in the exact format above (TYPE on first line, then field:value pairs):""
     if not lines:
         return result
 
+    # Extract type from first line (handle both "CONDITIONAL" and "TYPE: CONDITIONAL")
     response_type = lines[0].upper()
+    if ':' in response_type:
+        # Format: "TYPE: CONDITIONAL"
+        response_type = response_type.split(':', 1)[1].strip()
 
     if 'CONDITIONAL' in response_type:
         result['type'] = 'conditional'
@@ -164,12 +174,40 @@ Output in the exact format above (TYPE on first line, then field:value pairs):""
             elif line.upper().startswith('QUESTION:'):
                 result['answer_question'] = line.split(':', 1)[1].strip()
 
-        # Validation: If conditional but no condition found, fall back to regex parsing
+        # Validation: If conditional but no condition found, try regex parsing as fallback
         if result['frame_condition'] is None or result['frame_condition'] == '':
-            print(f"⚠ Warning: LLM classified as CONDITIONAL but no condition extracted. Falling back to simple type.")
-            print(f"⚠ LLM Response: {response[:200]}")
-            result['type'] = 'simple'
-            result['answer_question'] = question
+            print(f"⚠ Warning: LLM classified as CONDITIONAL but no condition extracted.")
+            print(f"⚠ Attempting regex-based fallback parsing...")
+
+            # Try to parse "When X, what Y?" or "Where X, what Y?" patterns
+            question_lower = question.lower()
+
+            # Pattern: "when there is X, what Y?"
+            when_match = re.match(r'when\s+there\s+is\s+(?:a\s+|an\s+)?(\w+)(?:\s+in\s+the\s+frame)?,\s+(.+)', question_lower)
+            if when_match:
+                object_name = when_match.group(1)
+                answer_q = when_match.group(2)
+                result['frame_condition'] = f"Is there a {object_name} in the frame?"
+                result['answer_question'] = answer_q
+                print(f"✓ Regex fallback successful")
+                print(f"  Condition: {result['frame_condition']}")
+                print(f"  Question: {result['answer_question']}")
+            else:
+                # Pattern: "where X, what Y?" or "at frames with X, what Y?"
+                where_match = re.match(r'(?:where|at\s+frames\s+with)\s+(?:the\s+)?(?:a\s+)?(.+?),\s+(.+)', question_lower)
+                if where_match:
+                    condition_desc = where_match.group(1)
+                    answer_q = where_match.group(2)
+                    result['frame_condition'] = f"Is {condition_desc}?"
+                    result['answer_question'] = answer_q
+                    print(f"✓ Regex fallback successful")
+                    print(f"  Condition: {result['frame_condition']}")
+                    print(f"  Question: {result['answer_question']}")
+                else:
+                    # Give up and fall back to simple
+                    print(f"⚠ Regex fallback failed. Treating as simple question.")
+                    result['type'] = 'simple'
+                    result['answer_question'] = question
 
     elif 'TIMESTAMP' in response_type:
         result['type'] = 'timestamp'
