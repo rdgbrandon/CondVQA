@@ -98,8 +98,13 @@ Questions without conditions (analyzes all frames):
 ```python
 from src import load_model, conditional_query_vqa_interpret
 
-# Load model
+# Load vision model
 model, processor = load_model()
+
+# Text model for parsing auto-loads when needed (Qwen2.5-0.5B-Instruct)
+# You can optionally pre-load it:
+# from src import load_text_model
+# text_model, text_tokenizer = load_text_model()
 
 # Ask conditional questions
 results = conditional_query_vqa_interpret(
@@ -159,6 +164,8 @@ def conditional_query_vqa_interpret(
     questions: List[str],
     model,
     processor,
+    text_model = None,
+    text_tokenizer = None,
     fps_sample: int = 1,
     output_dir: str = "conditional_query_analysis",
     aggregation_method: str = 'most_confident',
@@ -175,6 +182,8 @@ def conditional_query_vqa_interpret(
 - `questions`: List of questions (can include conditional clauses, timestamps, or be simple)
 - `model`: Vision-language model (from `load_model()`)
 - `processor`: Model's processor
+- `text_model`: Text-only LLM for parsing (optional, auto-loads Qwen2.5-0.5B if not provided)
+- `text_tokenizer`: Tokenizer for text model (optional, auto-loads if not provided)
 - `fps_sample`: Frames per second to extract (default: 1)
   - Higher = more frames to check, slower but more thorough
 - `output_dir`: Directory to save results
@@ -250,13 +259,18 @@ Result: "brown" (87% confidence) + attribution heatmap
 ### LLM Usage
 
 **Where LLMs are used:**
-1. **Question parsing** - Parse natural language into structured components
-2. **Frame condition checking** - Determine if frame matches condition
-3. **Question answering** - Answer the question on matching frames
+1. **Question parsing** - Parse natural language into structured components (uses dedicated text LLM)
+2. **Frame condition checking** - Determine if frame matches condition (uses LLaVA vision model)
+3. **Question answering** - Answer the question on matching frames (uses LLaVA vision model)
 
-**LLM Model:** LLaVA OneVision (same model used for VQA)
+**Models Used:**
+- **Text parsing:** Qwen2.5-0.5B-Instruct (dedicated text-only LLM for accurate question classification)
+- **Vision analysis:** LLaVA OneVision (for frame analysis and VQA)
 
-**Cost:** No additional API calls - uses the same model loaded for analysis
+**Why two models?**
+- The text-only model is optimized for parsing and understanding question structure
+- Provides better accuracy in classifying CONDITIONAL vs TIMESTAMP vs SIMPLE questions
+- Auto-loads when needed (no manual setup required)
 
 ### Comparison: Regex vs LLM Parsing
 

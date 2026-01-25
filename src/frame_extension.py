@@ -15,14 +15,14 @@ from .image_interpreter import compute_single_image_attribution
 from .text_interpreter import compute_text_attributions, visualize_text_attributions
 
 
-def parse_question_with_llm(question, model, processor):
+def parse_question_with_llm(question, text_model, text_tokenizer):
     """
-    Use LLM to parse complex conditional questions into frame-finding and answering stages.
+    Use dedicated text LLM to parse complex conditional questions into frame-finding and answering stages.
 
     Args:
         question: Natural language question (e.g., "When there is a dog in the frame, what color is the dog?")
-        model: Vision-language model
-        processor: Model's processor
+        text_model: Text-only LLM for parsing (e.g., Qwen)
+        text_tokenizer: Tokenizer for the text model
 
     Returns:
         dict with:
@@ -44,54 +44,94 @@ def parse_question_with_llm(question, model, processor):
             'answer_question': 'What is happening?'}
     """
 
-    # Create parsing prompt for the LLM
-    parsing_prompt = f"""Analyze this video question and identify if it has two parts:
-1. A CONDITION that specifies which frames to look at (e.g., "when there is a dog", "where the person is running")
-2. A QUESTION to answer on those frames (e.g., "what color is the dog?")
+    # Create parsing prompt for the LLM using chat template
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a precise question classifier for video analysis. Classify questions into exactly one of three types: CONDITIONAL, TIMESTAMP, or SIMPLE. Output only the classification format shown in examples."
+        },
+        {
+            "role": "user",
+            "content": f"""Classify this video question:
 
 Question: "{question}"
 
-Instructions:
-- If the question has a conditional clause (when/where/while + condition), respond with:
-  CONDITIONAL
-  CONDITION: [yes/no question to identify frames]
-  QUESTION: [question to answer on identified frames]
+Classification Rules:
+1. CONDITIONAL: Questions with "when X, what Y?" or "where X, what Y?" or "at frames with X, what Y?" structure
+   - Keywords: "when", "where", "while", "at frames with"
+   - Pattern: condition clause + question clause
+   - Example: "When there is a dog, what color is it?"
 
-- If the question mentions a specific timestamp (e.g., "at 4 seconds"), respond with:
-  TIMESTAMP
-  TIME: [number in seconds]
-  QUESTION: [question to answer]
+2. TIMESTAMP: Questions asking about a specific time or moment
+   - Keywords: "at X seconds", "at the beginning", "at the end", "in the first X seconds"
+   - Pattern: references a specific time point
+   - Example: "What happens at 4 seconds?"
 
-- If the question is simple with no condition or timestamp, respond with:
-  SIMPLE
-  QUESTION: [the question]
+3. SIMPLE: General questions about the entire video with NO condition and NO timestamp
+   - No conditional words, no time references
+   - Asks about the whole video
+   - Example: "What objects are in this video?"
+
+CRITICAL: Questions like "When there is X" are CONDITIONAL, not TIMESTAMP!
 
 Examples:
-"When there is a dog in the frame, what color is the dog?"
--> CONDITIONAL
+
+Input: "When there is a dog in the frame, what color is the dog?"
+Output:
+CONDITIONAL
 CONDITION: Is there a dog in the frame?
 QUESTION: What color is the dog?
 
-"What happens at 4 seconds?"
--> TIMESTAMP
+Input: "What happens at 4 seconds?"
+Output:
+TIMESTAMP
 TIME: 4
 QUESTION: What happens?
 
-"What is in this video?"
--> SIMPLE
+Input: "What is in this video?"
+Output:
+SIMPLE
 QUESTION: What is in this video?
 
-Now analyze: "{question}"
-Respond in the format above."""
+Input: "Where the person is running, what are they wearing?"
+Output:
+CONDITIONAL
+CONDITION: Is the person running?
+QUESTION: What are they wearing?
 
-    # Use LLM for text-only parsing (no image needed)
-    inputs = processor(text=parsing_prompt, return_tensors="pt").to(model.device)
+Input: "At frames with a car, is it red or blue?"
+Output:
+CONDITIONAL
+CONDITION: Is there a car?
+QUESTION: Is it red or blue?
 
+Now classify: "{question}"
+Output in the exact format above (TYPE on first line, then field:value pairs):"""
+        }
+    ]
+
+    # Format using chat template
+    text = text_tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+
+    # Tokenize
+    inputs = text_tokenizer([text], return_tensors="pt").to(text_model.device)
+
+    # Generate response
     with torch.no_grad():
-        output_ids = model.generate(**inputs, max_new_tokens=200, do_sample=False)
+        output_ids = text_model.generate(
+            **inputs,
+            max_new_tokens=200,
+            do_sample=False,
+            temperature=None,
+            top_p=None
+        )
 
-    # Decode response
-    response = processor.decode(output_ids[0], skip_special_tokens=True)
+    # Decode response (only the generated part, not the input)
+    response = text_tokenizer.decode(output_ids[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
 
     # Extract the assistant's response (after the prompt)
     if "assistant" in response.lower():
@@ -865,6 +905,8 @@ def conditional_query_vqa_interpret(
     questions,
     model,
     processor,
+    text_model=None,
+    text_tokenizer=None,
     fps_sample=1,
     output_dir="conditional_query_analysis",
     aggregation_method='most_confident',
@@ -892,6 +934,8 @@ def conditional_query_vqa_interpret(
         questions: List of questions (can include conditional clauses or timestamps)
         model: Vision-language model
         processor: Model's processor
+        text_model: Text-only LLM for question parsing (optional, will be loaded if not provided)
+        text_tokenizer: Tokenizer for text model (optional, will be loaded if not provided)
         fps_sample: Frames per second to sample from video (default: 1)
         output_dir: Directory to save results
         aggregation_method: How to combine multi-frame results
@@ -923,6 +967,13 @@ def conditional_query_vqa_interpret(
     print(f"Confidence Threshold: {confidence_threshold}")
     print(f"{'='*70}\n")
 
+    # Load text model if not provided
+    if text_model is None or text_tokenizer is None:
+        print("Loading text model for question parsing...")
+        from .model_loader import load_text_model
+        text_model, text_tokenizer = load_text_model()
+        print()
+
     if save_results:
         os.makedirs(output_dir, exist_ok=True)
 
@@ -951,9 +1002,9 @@ def conditional_query_vqa_interpret(
         print(f"Question {q_idx}/{len(questions)}: {question}")
         print(f"{'='*70}\n")
 
-        # Step 1: Parse question with LLM
-        print("Parsing question with LLM...")
-        parsed = parse_question_with_llm(question, model, processor)
+        # Step 1: Parse question with text LLM
+        print("Parsing question with text LLM...")
+        parsed = parse_question_with_llm(question, text_model, text_tokenizer)
 
         print(f"Question Type: {parsed['type']}")
         if parsed['type'] == 'conditional':

@@ -8,9 +8,14 @@ from src import load_model, conditional_query_vqa_interpret
 
 
 def main():
-    # Load the model
-    print("Loading model...")
+    # Load the vision-language model
+    print("Loading vision model...")
     model, processor = load_model()
+
+    # Note: Text model for question parsing will be automatically loaded
+    # if not provided. You can optionally load it explicitly:
+    # from src import load_text_model
+    # text_model, text_tokenizer = load_text_model()
 
     # Path to your video
     video_path = "path/to/your/video.mp4"
@@ -48,6 +53,7 @@ def main():
         questions=conditional_questions,
         model=model,
         processor=processor,
+        # text_model and text_tokenizer are optional - auto-loaded if not provided
         fps_sample=1,  # Sample 1 frame per second
         aggregation_method='most_confident',  # Options: 'most_confident', 'consensus', 'average'
         confidence_threshold=0.5,  # Minimum confidence to consider frame as matching condition
