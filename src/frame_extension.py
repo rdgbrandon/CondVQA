@@ -137,6 +137,9 @@ Output in the exact format above (TYPE on first line, then field:value pairs):""
     if "assistant" in response.lower():
         response = response.split("assistant")[-1].strip()
 
+    # Debug: Print raw LLM response for troubleshooting
+    print(f"\n[DEBUG] Raw LLM Response:\n{response}\n")
+
     # Parse the LLM response
     result = {
         'original_question': question,
@@ -160,6 +163,13 @@ Output in the exact format above (TYPE on first line, then field:value pairs):""
                 result['frame_condition'] = line.split(':', 1)[1].strip()
             elif line.upper().startswith('QUESTION:'):
                 result['answer_question'] = line.split(':', 1)[1].strip()
+
+        # Validation: If conditional but no condition found, fall back to regex parsing
+        if result['frame_condition'] is None or result['frame_condition'] == '':
+            print(f"⚠ Warning: LLM classified as CONDITIONAL but no condition extracted. Falling back to simple type.")
+            print(f"⚠ LLM Response: {response[:200]}")
+            result['type'] = 'simple'
+            result['answer_question'] = question
 
     elif 'TIMESTAMP' in response_type:
         result['type'] = 'timestamp'
