@@ -15,6 +15,135 @@ from .image_interpreter import compute_single_image_attribution
 from .text_interpreter import compute_text_attributions, visualize_text_attributions
 
 
+def parse_question_with_llm(question, model, processor):
+    """
+    Use LLM to parse complex conditional questions into frame-finding and answering stages.
+
+    Args:
+        question: Natural language question (e.g., "When there is a dog in the frame, what color is the dog?")
+        model: Vision-language model
+        processor: Model's processor
+
+    Returns:
+        dict with:
+            - 'type': 'conditional' or 'simple' or 'timestamp'
+            - 'frame_condition': Question to identify relevant frames (e.g., "Is there a dog?")
+            - 'answer_question': Question to answer on identified frames (e.g., "What color is the dog?")
+            - 'original_question': Original question
+            - 'timestamp': For timestamp type, the time in seconds
+
+    Examples:
+        "When there is a dog in the frame, what color is the dog?"
+        -> {'type': 'conditional',
+            'frame_condition': 'Is there a dog in the frame?',
+            'answer_question': 'What color is the dog?'}
+
+        "What is happening at 4 seconds?"
+        -> {'type': 'timestamp',
+            'timestamp': 4.0,
+            'answer_question': 'What is happening?'}
+    """
+
+    # Create parsing prompt for the LLM
+    parsing_prompt = f"""Analyze this video question and identify if it has two parts:
+1. A CONDITION that specifies which frames to look at (e.g., "when there is a dog", "where the person is running")
+2. A QUESTION to answer on those frames (e.g., "what color is the dog?")
+
+Question: "{question}"
+
+Instructions:
+- If the question has a conditional clause (when/where/while + condition), respond with:
+  CONDITIONAL
+  CONDITION: [yes/no question to identify frames]
+  QUESTION: [question to answer on identified frames]
+
+- If the question mentions a specific timestamp (e.g., "at 4 seconds"), respond with:
+  TIMESTAMP
+  TIME: [number in seconds]
+  QUESTION: [question to answer]
+
+- If the question is simple with no condition or timestamp, respond with:
+  SIMPLE
+  QUESTION: [the question]
+
+Examples:
+"When there is a dog in the frame, what color is the dog?"
+-> CONDITIONAL
+CONDITION: Is there a dog in the frame?
+QUESTION: What color is the dog?
+
+"What happens at 4 seconds?"
+-> TIMESTAMP
+TIME: 4
+QUESTION: What happens?
+
+"What is in this video?"
+-> SIMPLE
+QUESTION: What is in this video?
+
+Now analyze: "{question}"
+Respond in the format above."""
+
+    # Use LLM for text-only parsing (no image needed)
+    inputs = processor(text=parsing_prompt, return_tensors="pt").to(model.device)
+
+    with torch.no_grad():
+        output_ids = model.generate(**inputs, max_new_tokens=200, do_sample=False)
+
+    # Decode response
+    response = processor.decode(output_ids[0], skip_special_tokens=True)
+
+    # Extract the assistant's response (after the prompt)
+    if "assistant" in response.lower():
+        response = response.split("assistant")[-1].strip()
+
+    # Parse the LLM response
+    result = {
+        'original_question': question,
+        'type': 'simple',
+        'frame_condition': None,
+        'answer_question': question,
+        'timestamp': None
+    }
+
+    lines = [line.strip() for line in response.split('\n') if line.strip()]
+
+    if not lines:
+        return result
+
+    response_type = lines[0].upper()
+
+    if 'CONDITIONAL' in response_type:
+        result['type'] = 'conditional'
+        for line in lines[1:]:
+            if line.upper().startswith('CONDITION:'):
+                result['frame_condition'] = line.split(':', 1)[1].strip()
+            elif line.upper().startswith('QUESTION:'):
+                result['answer_question'] = line.split(':', 1)[1].strip()
+
+    elif 'TIMESTAMP' in response_type:
+        result['type'] = 'timestamp'
+        for line in lines[1:]:
+            if line.upper().startswith('TIME:'):
+                try:
+                    time_str = line.split(':', 1)[1].strip()
+                    # Extract first number found
+                    match = re.search(r'\d+(?:\.\d+)?', time_str)
+                    if match:
+                        result['timestamp'] = float(match.group())
+                except:
+                    pass
+            elif line.upper().startswith('QUESTION:'):
+                result['answer_question'] = line.split(':', 1)[1].strip()
+
+    elif 'SIMPLE' in response_type:
+        for line in lines[1:]:
+            if line.upper().startswith('QUESTION:'):
+                result['answer_question'] = line.split(':', 1)[1].strip()
+
+    return result
+
+
 def parse_temporal_reference(question, video_duration):
     """
     Parse temporal references from natural language questions.
@@ -153,6 +282,80 @@ def extract_frames(video_path, output_dir="frames", fps_sample=1, max_frames=Non
     print(f"✓ Extracted {count} frames to {output_dir}/")
 
     return frame_paths, video_fps, count
+
+
+def identify_frames_by_condition(frame_paths, condition_question, model, processor, confidence_threshold=0.5):
+    """
+    Identify which frames match a given condition using the VLM.
+
+    Args:
+        frame_paths: List of all frame paths
+        condition_question: Yes/no question to identify frames (e.g., "Is there a dog in the frame?")
+        model: Vision-language model
+        processor: Model's processor
+        confidence_threshold: Minimum confidence to consider frame as matching (default: 0.5)
+
+    Returns:
+        list of tuples: [(frame_idx, frame_path, confidence_score), ...]
+            Only frames where the model answers "yes" with confidence above threshold
+    """
+    from PIL import Image
+
+    matching_frames = []
+
+    print(f"Identifying frames matching: '{condition_question}'")
+
+    for frame_idx, frame_path in enumerate(tqdm(frame_paths, desc="Scanning frames")):
+        # Load frame
+        image = Image.open(frame_path).convert("RGB")
+
+        # Prepare inputs
+        conversation = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image"},
+                    {"type": "text", "text": condition_question}
+                ]
+            }
+        ]
+
+        prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
+        inputs = processor(images=image, text=prompt, return_tensors="pt").to(model.device)
+
+        # Generate response
+        with torch.no_grad():
+            output_ids = model.generate(**inputs, max_new_tokens=50, do_sample=False)
+
+        # Decode
+        generated_text = processor.decode(output_ids[0], skip_special_tokens=True)
+
+        # Extract answer (after "assistant")
+        if "assistant" in generated_text.lower():
+            answer = generated_text.split("assistant")[-1].strip().lower()
+        else:
+            answer = generated_text.strip().lower()
+
+        # Check if answer indicates "yes" (positive match)
+        # Look for affirmative words
+        affirmative_words = ['yes', 'yeah', 'yep', 'sure', 'absolutely', 'definitely', 'correct', 'true']
+        is_match = any(word in answer for word in affirmative_words)
+
+        # Simple heuristic for confidence: if answer starts with affirmative word, higher confidence
+        if is_match:
+            if answer.startswith(tuple(affirmative_words)):
+                confidence = 0.9
+            else:
+                confidence = 0.6
+
+            if confidence >= confidence_threshold:
+                matching_frames.append((frame_idx, frame_path, confidence))
+
+        torch.cuda.empty_cache()
+
+    print(f"✓ Found {len(matching_frames)} matching frames out of {len(frame_paths)}")
+
+    return matching_frames
 
 
 def get_frames_for_timerange(frame_paths, fps_sample, start_sec, end_sec):
@@ -650,6 +853,281 @@ def temporal_query_vqa_interpret(
 
     print(f"\n{'='*70}")
     print("✓ TEMPORAL QUERY ANALYSIS COMPLETE")
+    if save_results:
+        print(f"Results saved to: {output_dir}/")
+    print(f"{'='*70}\n")
+
+    return all_results
+
+
+def conditional_query_vqa_interpret(
+    video_path,
+    questions,
+    model,
+    processor,
+    fps_sample=1,
+    output_dir="conditional_query_analysis",
+    aggregation_method='most_confident',
+    confidence_threshold=0.5,
+    show_visualizations=True,
+    save_results=True,
+    include_text_attribution=False
+):
+    """
+    Answer complex conditional questions using LLM-based parsing and two-stage analysis.
+
+    This function handles questions like:
+    - "When there is a dog in the frame, what color is the dog?"
+    - "Where the person is running, what are they wearing?"
+    - "At frames with a car, is it red or blue?"
+
+    The process:
+    1. LLM parses question into: condition + question
+    2. Scan all frames to find those matching the condition
+    3. Answer the question only on matching frames
+    4. Aggregate results
+
+    Args:
+        video_path: Path to video file
+        questions: List of questions (can include conditional clauses or timestamps)
+        model: Vision-language model
+        processor: Model's processor
+        fps_sample: Frames per second to sample from video (default: 1)
+        output_dir: Directory to save results
+        aggregation_method: How to combine multi-frame results
+            - 'most_confident': Use frame with highest confidence
+            - 'consensus': Use most common prediction
+            - 'average': Average attributions and confidences
+        confidence_threshold: Minimum confidence for frame condition matching (default: 0.5)
+        show_visualizations: Whether to display visualizations
+        save_results: Whether to save results to disk
+        include_text_attribution: Whether to compute text attributions
+
+    Returns:
+        dict: Results for each question with conditional analysis
+
+    Example:
+        >>> results = conditional_query_vqa_interpret(
+        ...     "video.mp4",
+        ...     ["When there is a dog in the frame, what color is the dog?"],
+        ...     model, processor
+        ... )
+    """
+    print(f"\n{'='*70}")
+    print("CONDITIONAL QUERY VIDEO ANALYSIS")
+    print(f"{'='*70}")
+    print(f"Video: {video_path}")
+    print(f"Questions: {len(questions)}")
+    print(f"Sample Rate: {fps_sample} FPS")
+    print(f"Aggregation Method: {aggregation_method}")
+    print(f"Confidence Threshold: {confidence_threshold}")
+    print(f"{'='*70}\n")
+
+    if save_results:
+        os.makedirs(output_dir, exist_ok=True)
+
+    # Extract all frames first
+    print("Extracting frames from video...")
+    frames_dir = os.path.join(output_dir, "frames")
+    frame_paths, video_fps, num_frames = extract_frames(
+        video_path,
+        output_dir=frames_dir,
+        fps_sample=fps_sample
+    )
+
+    if len(frame_paths) == 0:
+        print("Error: No frames extracted from video")
+        return
+
+    video_duration = len(frame_paths) / fps_sample
+    print(f"✓ Video duration: {video_duration:.2f} seconds")
+    print(f"✓ Total frames extracted: {num_frames}")
+
+    all_results = {}
+    default_cmap = setup_colormap()
+
+    for q_idx, question in enumerate(questions, 1):
+        print(f"\n{'='*70}")
+        print(f"Question {q_idx}/{len(questions)}: {question}")
+        print(f"{'='*70}\n")
+
+        # Step 1: Parse question with LLM
+        print("Parsing question with LLM...")
+        parsed = parse_question_with_llm(question, model, processor)
+
+        print(f"Question Type: {parsed['type']}")
+        if parsed['type'] == 'conditional':
+            print(f"Frame Condition: {parsed['frame_condition']}")
+            print(f"Answer Question: {parsed['answer_question']}")
+        elif parsed['type'] == 'timestamp':
+            print(f"Timestamp: {parsed['timestamp']}s")
+            print(f"Answer Question: {parsed['answer_question']}")
+        else:
+            print(f"Answer Question: {parsed['answer_question']}")
+
+        # Step 2: Identify relevant frames
+        if parsed['type'] == 'conditional':
+            # Find frames matching the condition
+            matching_frames = identify_frames_by_condition(
+                frame_paths,
+                parsed['frame_condition'],
+                model,
+                processor,
+                confidence_threshold=confidence_threshold
+            )
+
+            if len(matching_frames) == 0:
+                print("⚠ No frames matched the condition. Skipping this question.")
+                all_results[question] = {
+                    'error': 'No matching frames found',
+                    'parsed': parsed
+                }
+                continue
+
+            # Extract just the frame paths
+            relevant_frames = [fp for _, fp, _ in matching_frames]
+            frame_indices = [idx for idx, _, _ in matching_frames]
+            frame_confidences = [conf for _, _, conf in matching_frames]
+
+            print(f"\nMatching frame indices: {frame_indices}")
+            print(f"Average condition confidence: {np.mean(frame_confidences):.2%}")
+
+        elif parsed['type'] == 'timestamp':
+            # Use timestamp to select frame
+            if parsed['timestamp'] is not None:
+                relevant_frames = get_frames_for_timerange(
+                    frame_paths, fps_sample, parsed['timestamp'], parsed['timestamp']
+                )
+                frame_indices = [int(parsed['timestamp'] * fps_sample)]
+            else:
+                print("⚠ Could not parse timestamp. Using all frames.")
+                relevant_frames = frame_paths
+                frame_indices = list(range(len(frame_paths)))
+
+        else:  # simple
+            # Use all frames
+            relevant_frames = frame_paths
+            frame_indices = list(range(len(frame_paths)))
+
+        # Step 3: Answer the question on identified frames
+        print(f"\nAnalyzing {len(relevant_frames)} frame(s) for: '{parsed['answer_question']}'")
+
+        frame_results = process_frame_batch(
+            relevant_frames,
+            parsed['answer_question'],
+            model,
+            processor,
+            show_visualizations=False,
+            include_text_attribution=include_text_attribution
+        )
+
+        # Step 4: Aggregate results
+        aggregated_result = aggregate_temporal_results(frame_results, method=aggregation_method)
+
+        if aggregated_result:
+            print(f"\n{'─'*70}")
+            print(f"AGGREGATED RESULT ({aggregation_method})")
+            print(f"{'─'*70}")
+            print(f"Prediction: '{aggregated_result['prediction']}'")
+            print(f"Confidence: {aggregated_result['confidence']:.4f} ({aggregated_result['confidence']*100:.2f}%)")
+
+            if 'consensus_percentage' in aggregated_result:
+                print(f"Consensus: {aggregated_result['consensus_count']}/{len(frame_results)} frames ({aggregated_result['consensus_percentage']:.1f}%)")
+
+            print(f"\nTop predictions:")
+            for i, (token, prob) in enumerate(aggregated_result['top_predictions'], 1):
+                print(f"  {i}. '{token}' - {prob:.4f} ({prob*100:.2f}%)")
+
+            # Visualize aggregated result
+            if show_visualizations:
+                fig, _ = visualization.visualize_image_attr_multiple(
+                    aggregated_result['attributions'],
+                    aggregated_result['original_image'],
+                    ["original_image", "heat_map"],
+                    ["all", "absolute_value"],
+                    titles=[
+                        f"Matching Frame(s)",
+                        f"Attribution: '{aggregated_result['prediction']}'"
+                    ],
+                    cmap=default_cmap,
+                    show_colorbar=True,
+                    fig_size=(12, 6)
+                )
+                plt.suptitle(f"Q{q_idx}: {question}", fontsize=12, y=1.02)
+                plt.tight_layout()
+
+                if save_results:
+                    save_path = os.path.join(output_dir, f"attribution_q{q_idx}.png")
+                    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+                    print(f"✓ Saved visualization to {save_path}")
+
+                plt.show()
+
+            # Save detailed report
+            if save_results:
+                report_path = os.path.join(output_dir, f"report_q{q_idx}.txt")
+                with open(report_path, 'w') as f:
+                    f.write("=" * 70 + "\n")
+                    f.write("CONDITIONAL QUERY ANALYSIS REPORT\n")
+                    f.write("=" * 70 + "\n\n")
+                    f.write(f"Original Question: {question}\n")
+                    f.write(f"Question Type: {parsed['type']}\n\n")
+
+                    if parsed['type'] == 'conditional':
+                        f.write(f"Frame Condition: {parsed['frame_condition']}\n")
+                        f.write(f"Matching Frames: {len(relevant_frames)} out of {len(frame_paths)}\n")
+                        f.write(f"Frame Indices: {frame_indices}\n")
+                        if 'frame_confidences' in locals():
+                            f.write(f"Avg Condition Confidence: {np.mean(frame_confidences):.2%}\n")
+                    elif parsed['type'] == 'timestamp':
+                        f.write(f"Timestamp: {parsed['timestamp']}s\n")
+
+                    f.write(f"Answer Question: {parsed['answer_question']}\n")
+                    f.write(f"Aggregation Method: {aggregation_method}\n\n")
+
+                    f.write("-" * 70 + "\n")
+                    f.write("AGGREGATED RESULT\n")
+                    f.write("-" * 70 + "\n\n")
+                    f.write(f"Prediction: '{aggregated_result['prediction']}'\n")
+                    f.write(f"Confidence: {aggregated_result['confidence']:.4f} ({aggregated_result['confidence']*100:.2f}%)\n\n")
+
+                    if 'consensus_percentage' in aggregated_result:
+                        f.write(f"Consensus: {aggregated_result['consensus_count']}/{len(frame_results)} frames ")
+                        f.write(f"({aggregated_result['consensus_percentage']:.1f}%)\n\n")
+
+                    f.write("Top Predictions:\n")
+                    for i, (token, prob) in enumerate(aggregated_result['top_predictions'], 1):
+                        f.write(f"  {i}. '{token}' - {prob:.4f} ({prob*100:.2f}%)\n")
+
+                    f.write("\n" + "-" * 70 + "\n")
+                    f.write("INDIVIDUAL FRAME RESULTS\n")
+                    f.write("-" * 70 + "\n\n")
+
+                    for i, r in enumerate(frame_results):
+                        if parsed['type'] == 'conditional' and i < len(frame_confidences):
+                            f.write(f"Frame {frame_indices[i]} (condition conf: {frame_confidences[i]:.2%}):\n")
+                        else:
+                            f.write(f"Frame {i}:\n")
+                        f.write(f"  Prediction: '{r['prediction']}'\n")
+                        f.write(f"  Confidence: {r['confidence']:.4f}\n\n")
+
+                print(f"✓ Saved report to {report_path}")
+
+            # Add metadata
+            aggregated_result['query_info'] = {
+                'parsed': parsed,
+                'frame_indices': frame_indices,
+                'num_matching_frames': len(relevant_frames),
+                'total_frames': len(frame_paths),
+                'individual_results': frame_results
+            }
+
+            all_results[question] = aggregated_result
+
+        torch.cuda.empty_cache()
+
+    print(f"\n{'='*70}")
+    print("✓ CONDITIONAL QUERY ANALYSIS COMPLETE")
     if save_results:
         print(f"Results saved to: {output_dir}/")
     print(f"{'='*70}\n")
