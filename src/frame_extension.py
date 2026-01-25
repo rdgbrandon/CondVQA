@@ -48,65 +48,72 @@ def parse_question_with_llm(question, text_model, text_tokenizer):
     messages = [
         {
             "role": "system",
-            "content": "You are a question parser. Extract the condition and question from conditional video questions. Follow the exact output format shown in examples."
+            "content": "You are a video question parser. Your job is to break down conditional questions into two parts: a yes/no CONDITION to find relevant frames, and a QUESTION to answer on those frames."
         },
         {
             "role": "user",
-            "content": f"""Parse this question: "{question}"
+            "content": f"""Break down this question into parts:
 
-RULES:
-1. CONDITIONAL questions have "when X, Y?" or "where X, Y?" structure
-   - Split into: CONDITION (yes/no question) and QUESTION (what to answer)
-2. TIMESTAMP questions ask about specific times
-   - Extract: TIME (number) and QUESTION
-3. SIMPLE questions have no condition or time
-   - Just output: QUESTION
+"{question}"
 
-OUTPUT FORMAT (copy exactly):
-
-For CONDITIONAL:
-CONDITIONAL
-CONDITION: <yes/no question>
-QUESTION: <what to answer>
-
-For TIMESTAMP:
-TIMESTAMP
-TIME: <number>
-QUESTION: <what to answer>
-
-For SIMPLE:
-SIMPLE
-QUESTION: <the question>
+INSTRUCTIONS:
+- If the question has "when X, what Y?" structure, extract X as a yes/no question
+- The CONDITION must be a simple yes/no question (starts with "Is" or "Does")
+- The QUESTION is what to answer after finding matching frames
 
 EXAMPLES:
 
 Input: "When there is a dog in the frame, what color is the dog?"
+Step 1: Identify condition → "there is a dog"
+Step 2: Convert to yes/no → "Is there a dog in the frame?"
+Step 3: Extract question → "What color is the dog?"
+Output:
 CONDITIONAL
 CONDITION: Is there a dog in the frame?
 QUESTION: What color is the dog?
 
+Input: "When there is a cat, what color is the cat?"
+Step 1: Identify condition → "there is a cat"
+Step 2: Convert to yes/no → "Is there a cat?"
+Step 3: Extract question → "What color is the cat?"
+Output:
+CONDITIONAL
+CONDITION: Is there a cat?
+QUESTION: What color is the cat?
+
 Input: "Where the person is running, what are they wearing?"
+Step 1: Identify condition → "person is running"
+Step 2: Convert to yes/no → "Is the person running?"
+Step 3: Extract question → "What are they wearing?"
+Output:
 CONDITIONAL
 CONDITION: Is the person running?
 QUESTION: What are they wearing?
 
 Input: "At frames with a car, is it red or blue?"
+Step 1: Identify condition → "a car"
+Step 2: Convert to yes/no → "Is there a car?"
+Step 3: Extract question → "Is it red or blue?"
+Output:
 CONDITIONAL
 CONDITION: Is there a car?
 QUESTION: Is it red or blue?
 
 Input: "What happens at 4 seconds?"
+Step 1: Identify timestamp → 4 seconds
+Output:
 TIMESTAMP
 TIME: 4
 QUESTION: What happens?
 
 Input: "What is in this video?"
+Step 1: No condition or timestamp
+Output:
 SIMPLE
 QUESTION: What is in this video?
 
 Now parse: "{question}"
-
-Output (follow format exactly):"""
+Output:"""
         }
     ]
 
