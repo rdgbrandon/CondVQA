@@ -48,71 +48,65 @@ def parse_question_with_llm(question, text_model, text_tokenizer):
     messages = [
         {
             "role": "system",
-            "content": "You are a precise question classifier for video analysis. Classify questions into exactly one of three types: CONDITIONAL, TIMESTAMP, or SIMPLE. Output only the classification format shown in examples."
+            "content": "You are a question parser. Extract the condition and question from conditional video questions. Follow the exact output format shown in examples."
         },
         {
             "role": "user",
-            "content": f"""Classify this video question:
+            "content": f"""Parse this question: "{question}"
 
-Question: "{question}"
+RULES:
+1. CONDITIONAL questions have "when X, Y?" or "where X, Y?" structure
+   - Split into: CONDITION (yes/no question) and QUESTION (what to answer)
+2. TIMESTAMP questions ask about specific times
+   - Extract: TIME (number) and QUESTION
+3. SIMPLE questions have no condition or time
+   - Just output: QUESTION
 
-Classification Rules:
-1. CONDITIONAL: Questions with "when X, what Y?" or "where X, what Y?" or "at frames with X, what Y?" structure
-   - Keywords: "when", "where", "while", "at frames with"
-   - Pattern: condition clause + question clause
-   - Example: "When there is a dog, what color is it?"
+OUTPUT FORMAT (copy exactly):
 
-2. TIMESTAMP: Questions asking about a specific time or moment
-   - Keywords: "at X seconds", "at the beginning", "at the end", "in the first X seconds"
-   - Pattern: references a specific time point
-   - Example: "What happens at 4 seconds?"
+For CONDITIONAL:
+CONDITIONAL
+CONDITION: <yes/no question>
+QUESTION: <what to answer>
 
-3. SIMPLE: General questions about the entire video with NO condition and NO timestamp
-   - No conditional words, no time references
-   - Asks about the whole video
-   - Example: "What objects are in this video?"
+For TIMESTAMP:
+TIMESTAMP
+TIME: <number>
+QUESTION: <what to answer>
 
-CRITICAL: Questions like "When there is X" are CONDITIONAL, not TIMESTAMP!
+For SIMPLE:
+SIMPLE
+QUESTION: <the question>
 
-IMPORTANT OUTPUT FORMAT:
-- First line: Just the type (CONDITIONAL, TIMESTAMP, or SIMPLE)
-- Following lines: Field-value pairs
-- For CONDITIONAL, you MUST provide both CONDITION and QUESTION on separate lines
-
-Examples:
+EXAMPLES:
 
 Input: "When there is a dog in the frame, what color is the dog?"
-Output:
 CONDITIONAL
 CONDITION: Is there a dog in the frame?
 QUESTION: What color is the dog?
 
-Input: "What happens at 4 seconds?"
-Output:
-TIMESTAMP
-TIME: 4
-QUESTION: What happens?
-
-Input: "What is in this video?"
-Output:
-SIMPLE
-QUESTION: What is in this video?
-
 Input: "Where the person is running, what are they wearing?"
-Output:
 CONDITIONAL
 CONDITION: Is the person running?
 QUESTION: What are they wearing?
 
 Input: "At frames with a car, is it red or blue?"
-Output:
 CONDITIONAL
 CONDITION: Is there a car?
 QUESTION: Is it red or blue?
 
-Now classify: "{question}"
+Input: "What happens at 4 seconds?"
+TIMESTAMP
+TIME: 4
+QUESTION: What happens?
 
-Your output (start with just CONDITIONAL, TIMESTAMP, or SIMPLE on the first line):"""
+Input: "What is in this video?"
+SIMPLE
+QUESTION: What is in this video?
+
+Now parse: "{question}"
+
+Output (follow format exactly):"""
         }
     ]
 
@@ -126,14 +120,16 @@ Your output (start with just CONDITIONAL, TIMESTAMP, or SIMPLE on the first line
     # Tokenize
     inputs = text_tokenizer([text], return_tensors="pt").to(text_model.device)
 
-    # Generate response
+    # Generate response with strict settings for consistent output
     with torch.no_grad():
         output_ids = text_model.generate(
             **inputs,
-            max_new_tokens=200,
+            max_new_tokens=150,
             do_sample=False,
-            temperature=None,
-            top_p=None
+            num_beams=1,
+            repetition_penalty=1.0,
+            pad_token_id=text_tokenizer.pad_token_id,
+            eos_token_id=text_tokenizer.eos_token_id
         )
 
     # Decode response (only the generated part, not the input)
@@ -174,40 +170,12 @@ Your output (start with just CONDITIONAL, TIMESTAMP, or SIMPLE on the first line
             elif line.upper().startswith('QUESTION:'):
                 result['answer_question'] = line.split(':', 1)[1].strip()
 
-        # Validation: If conditional but no condition found, try regex parsing as fallback
+        # Validation: If conditional but no condition found, this is an error
         if result['frame_condition'] is None or result['frame_condition'] == '':
-            print(f"⚠ Warning: LLM classified as CONDITIONAL but no condition extracted.")
-            print(f"⚠ Attempting regex-based fallback parsing...")
-
-            # Try to parse "When X, what Y?" or "Where X, what Y?" patterns
-            question_lower = question.lower()
-
-            # Pattern: "when there is X, what Y?"
-            when_match = re.match(r'when\s+there\s+is\s+(?:a\s+|an\s+)?(\w+)(?:\s+in\s+the\s+frame)?,\s+(.+)', question_lower)
-            if when_match:
-                object_name = when_match.group(1)
-                answer_q = when_match.group(2)
-                result['frame_condition'] = f"Is there a {object_name} in the frame?"
-                result['answer_question'] = answer_q
-                print(f"✓ Regex fallback successful")
-                print(f"  Condition: {result['frame_condition']}")
-                print(f"  Question: {result['answer_question']}")
-            else:
-                # Pattern: "where X, what Y?" or "at frames with X, what Y?"
-                where_match = re.match(r'(?:where|at\s+frames\s+with)\s+(?:the\s+)?(?:a\s+)?(.+?),\s+(.+)', question_lower)
-                if where_match:
-                    condition_desc = where_match.group(1)
-                    answer_q = where_match.group(2)
-                    result['frame_condition'] = f"Is {condition_desc}?"
-                    result['answer_question'] = answer_q
-                    print(f"✓ Regex fallback successful")
-                    print(f"  Condition: {result['frame_condition']}")
-                    print(f"  Question: {result['answer_question']}")
-                else:
-                    # Give up and fall back to simple
-                    print(f"⚠ Regex fallback failed. Treating as simple question.")
-                    result['type'] = 'simple'
-                    result['answer_question'] = question
+            print(f"⚠ ERROR: LLM classified as CONDITIONAL but failed to extract condition!")
+            print(f"⚠ LLM Response: {response}")
+            print(f"⚠ This indicates the LLM is not following instructions properly.")
+            raise ValueError(f"LLM parsing failed: classified as CONDITIONAL but no condition extracted. Response: {response}")
 
     elif 'TIMESTAMP' in response_type:
         result['type'] = 'timestamp'
