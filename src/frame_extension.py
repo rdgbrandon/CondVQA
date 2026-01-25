@@ -380,12 +380,22 @@ def identify_frames_by_condition(frame_paths, condition_question, model, process
         else:
             answer = generated_text.strip().lower()
 
-        # Check if answer indicates "yes" (positive match)
-        # Look for affirmative words
-        affirmative_words = ['yes', 'yeah', 'yep', 'sure', 'absolutely', 'definitely', 'correct', 'true']
-        is_match = any(word in answer for word in affirmative_words)
+        # Debug: Print frame responses (first 10 frames only to avoid spam)
+        if frame_idx < 10:
+            print(f"  Frame {frame_idx}: {answer[:100]}")
 
-        # Simple heuristic for confidence: if answer starts with affirmative word, higher confidence
+        # Check if answer indicates "yes" (positive match)
+        # Look for affirmative words at the START of the response (more reliable)
+        affirmative_words = ['yes', 'yeah', 'yep', 'sure', 'absolutely', 'definitely', 'correct', 'true']
+        negative_words = ['no', 'not', 'none', 'nope', 'negative', 'false']
+
+        # Check for negative words first (higher priority)
+        has_negative = any(answer.startswith(word) for word in negative_words)
+        has_affirmative = any(answer.startswith(word) for word in affirmative_words)
+
+        is_match = has_affirmative and not has_negative
+
+        # Confidence based on answer clarity
         if is_match:
             if answer.startswith(tuple(affirmative_words)):
                 confidence = 0.9
