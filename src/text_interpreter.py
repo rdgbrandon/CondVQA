@@ -85,7 +85,7 @@ def compute_text_attributions(
         confidence_score = probs[0, first_token_id].item()
 
 
-    embed_layer = model.language_model.embed_tokens
+    embed_layer = model.get_input_embeddings()
 
     input_embeds = embed_layer(input_ids).detach()
     input_embeds.requires_grad_(True)
@@ -232,7 +232,7 @@ def compute_joint_attributions(
         internal_batch_size=1,
     )
 
-    embed_layer = model.language_model.embed_tokens
+    embed_layer = model.get_input_embeddings()
 
     input_embeds = embed_layer(input_ids).detach()
     input_embeds.requires_grad_(True)

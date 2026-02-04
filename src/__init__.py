@@ -3,9 +3,7 @@
 from .model_loader import load_model, load_text_model
 from .image_interpreter import vqa_interpret, compute_single_image_attribution
 from .frame_extension import (
-    temporal_vqa_interpret,
     extract_frames,
-    temporal_query_vqa_interpret,
     conditional_query_vqa_interpret
 )
 from .text_interpreter import text_vqa_interpret, compute_text_attributions, compute_joint_attributions
@@ -16,8 +14,6 @@ __all__ = [
     'load_text_model',
     'vqa_interpret',
     'compute_single_image_attribution',
-    'temporal_vqa_interpret',
-    'temporal_query_vqa_interpret',
     'conditional_query_vqa_interpret',
     'extract_frames',
     'text_vqa_interpret',
