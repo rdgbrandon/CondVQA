@@ -10,7 +10,7 @@ from transformers import (
 )
 
 
-def load_model(model_id="llava-hf/llava-onevision-qwen2-1.5b-ov-hf"):
+def load_model(model_id="llava-hf/llava-onevision-qwen2-0.5b-ov-hf"):
     quantization_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.float16
