@@ -12,7 +12,7 @@ from transformers import (
 
 def load_model(model_id="llava-hf/llava-onevision-qwen2-0.5b-ov-hf"):
     """
-    Load the LLaVA vision-language model with 4-bit quantization
+    Load the LLaVA vision-language model with 8-bit quantization
 
     Args:
         model_id: HuggingFace model identifier
@@ -20,10 +20,9 @@ def load_model(model_id="llava-hf/llava-onevision-qwen2-0.5b-ov-hf"):
     Returns:
         tuple: (model, processor)
     """
-    # Configure 4-bit quantization to reduce memory usage
+    # Configure 8-bit quantization (4-bit causes lm_head.weight issues with this model)
     quantization_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.float16
+        load_in_8bit=True
     )
 
     print("Loading processor...")
