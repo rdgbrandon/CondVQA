@@ -4,7 +4,7 @@ import torch
 from transformers import AutoProcessor, LlavaOnevisionForConditionalGeneration, BitsAndBytesConfig
 
 
-def load_model(model_id="llava-hf/llava-onevision-qwen2-0.5b-ov-hf"):
+def load_model(model_id="llava-hf/llava-onevision-qwen2-0.5b-si-hf"):
     """
     Load the LLaVA vision-language model with 4-bit quantization
 
