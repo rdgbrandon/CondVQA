@@ -367,18 +367,27 @@ def identify_frames_by_condition(frame_paths, condition_question, model, process
         prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
         inputs = processor(images=image, text=prompt, return_tensors="pt").to(model.device)
 
+        pixel_values = inputs["pixel_values"]
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
+        image_sizes = inputs["image_sizes"]
+
         # Generate response
         with torch.no_grad():
-            output_ids = model.generate(**inputs, max_new_tokens=50, do_sample=False)
+            output_ids = model.generate(
+                pixel_values=pixel_values,
+                input_ids=input_ids,
+                image_sizes=image_sizes,
+                attention_mask=attention_mask,
+                max_new_tokens=50,
+                do_sample=False,
+                pad_token_id=processor.tokenizer.pad_token_id
+            )
 
-        # Decode
-        generated_text = processor.decode(output_ids[0], skip_special_tokens=True)
-
-        # Extract answer (after "assistant")
-        if "assistant" in generated_text.lower():
-            answer = generated_text.split("assistant")[-1].strip().lower()
-        else:
-            answer = generated_text.strip().lower()
+        # Decode only the generated tokens (not the prompt)
+        prompt_length = input_ids.shape[1]
+        generated_tokens = output_ids[0, prompt_length:]
+        answer = processor.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip().lower()
 
         # Debug: Print frame responses (first 10 frames only to avoid spam)
         if frame_idx < 10:
