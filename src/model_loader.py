@@ -10,34 +10,32 @@ from transformers import (
 )
 
 
-def load_model(model_id="llava-hf/llava-onevision-qwen2-0.5b-ov-hf"):
-    """
-    Load the LLaVA vision-language model with 8-bit quantization
-
-    Args:
-        model_id: HuggingFace model identifier
-
-    Returns:
-        tuple: (model, processor)
-    """
-    # Configure 8-bit quantization (4-bit causes lm_head.weight issues with this model)
+def load_model(model_id="llava-hf/llava-onevision-qwen2-1.5b-ov-hf"):
     quantization_config = BitsAndBytesConfig(
-        load_in_8bit=True
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16
     )
 
     print("Loading processor...")
-    processor = AutoProcessor.from_pretrained(model_id)
-
-    print("Loading model (this may take a minute)...")
-    model = LlavaOnevisionForConditionalGeneration.from_pretrained(
+    processor = AutoProcessor.from_pretrained(
         model_id,
-        quantization_config=quantization_config,
-        device_map="auto"
+        use_fast=False
     )
 
+    print("Loading model...")
+    model = LlavaOnevisionForConditionalGeneration.from_pretrained(
+        model_id,
+        torch_dtype=torch.float16,
+        quantization_config=quantization_config,
+        device_map="auto",
+        ignore_mismatched_sizes=False
+    )
+
+    model.eval()
     print("[OK] Model loaded successfully")
 
     return model, processor
+
 
 
 def load_text_model(model_id="Qwen/Qwen2.5-1.5B-Instruct"):
