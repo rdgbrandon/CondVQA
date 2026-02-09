@@ -1,0 +1,51 @@
+Video ID,CQ,Expected Answer
+tc1,"When you see birds, how many do you see?",>1 ~10
+tc2,"When you see the sky, what color is the sky?",Grey or Blue
+tc3,"When you see her arm, what is her arm holding?",Spoon/Stick
+tc4,What objects do you see when the screen becomes green?,Clay Models
+tc5,"When you see his hands holding something, what is he holding?",Seeds
+tc6,"When you see equipment, name the equipment.",Microscope
+tc7,"When you see her arm, what is her arm holding?",Shower Head
+tc8,"When you see her arm, what is her arm holding?",Airplane
+tc9,"When you see orange, what objects are orange?",Carrots
+tc10,What objects do you see when the screen becomes green?,None (never green)
+tc11,What object do you see being inflated?,Soccer Ball
+tc12,"When you see a lawnmower, what color is the lawnmower?",Red
+tc13,"When you see a man holding something, what is he holding?",Phone
+tc14,"When the wood starts flying, what is the man holding?",Blow Machine
+tc15,"When there are more white/green ducks then brown ducks, how many white/green ducks are there?",7
+tc16,"When you see the bear's eye, what color are its eyes?",Black
+tc17,"When you see visible letters on the screen, what does it say?",AI
+tc18,What is visible in the video?,"Cranes, buildings, etc"
+tc19,What is visible in the video?,"Trees, field, etc"
+tc20,"When you see a wire, what color is the wire?",Black
+tc21,"When you see purple, what other colors do you see?","Yellow, Green,White"
+tc22,What is visible in the video?,Wheat
+tc23,"When you see chickens, how many chickens do you see?",3-5
+tc24,"When you see an orange, what is the man holding?",Knife
+tc25,"When you see purple gloves, what are the golves holding?","Block, Stick"
+tc26,"When you see a basket, how many apples are inside the basket?",9+
+tc27,"When you see a hand, how many strawberries are there?",7+
+tc28,"When you see the elephant's tail, what is it eating?",Grass
+tc29,What is visible in the video?,"White flowers, trees"
+tc30,"When you see the man's hand, how much money is he holding?",600+
+tc31,"When you see a parking lot, how many cars are there?",15+
+tc32,What is hapenning in the video?,Man holding ball
+tc33,"When you see a hand, what is it holding?",Toast
+tc34,"When you see a horse, what color is the horse?",Black
+tc35,"When you see white strips, what is seen in the video?",Street
+tc36,"When the chicken is being cut, how many chicken pieces are there?","2,4,8 etc"
+tc37,"When you see gloves, what is the man cutting?",fingernails
+tc38,"When you see a bunny, what color is the bunny?",Brown
+tc39,"When you see a stitch machine, what is being stitched?",Cloth
+tc40,What is visible in the video?,Bridge
+tc41,"When you see a boat, what color is the boat?",Yellow
+tc42,"When the amount is over 500,000, what amount do you see?",500000+
+tc43,"When you see hands, what food do you see?",Sushi/other ingredients
+tc44,"When the man is holding money, how much do you see?",100+
+tc45,"When you see water, what color is the turtle?",Brown/Black
+tc46,"When you see onions, how many burger patties do you see?",1/2
+tc47,"When you see a phone, what is walking on top of the phone?",Dinosaur
+tc48,"When you see a canoe, where is the canoe?",Shore
+tc49,"When you see a jacket, what color is the jacket?",Pink
+tc_50,"When you see a bus, what color is the bus?",Green
