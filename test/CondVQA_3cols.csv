@@ -4,7 +4,7 @@ tc2,"When you see the sky, what color is the sky?",Grey or Blue
 tc3,"When you see her arm, what is her arm holding?",Spoon/Stick
 tc4,What objects do you see when the screen becomes green?,Clay Models
 tc5,"When you see his hands holding something, what is he holding?",Seeds
-tc6,"When you see equipment, name the equipment.",Microscope
+tc6,"When you see equipment, name the equipment.",Microscope/camera
 tc7,"When you see her arm, what is her arm holding?",Shower Head
 tc8,"When you see her arm, what is her arm holding?",Airplane
 tc9,"When you see orange, what objects are orange?",Carrots
@@ -12,7 +12,7 @@ tc10,What objects do you see when the screen becomes green?,None (never green)
 tc11,What object do you see being inflated?,Soccer Ball
 tc12,"When you see a lawnmower, what color is the lawnmower?",Red
 tc13,"When you see a man holding something, what is he holding?",Phone
-tc14,"When the wood starts flying, what is the man holding?",Blow Machine
+tc14,"When the wood starts flying, what is the man holding?",Blow Machine/hand drill
 tc15,"When there are more white/green ducks then brown ducks, how many white/green ducks are there?",7
 tc16,"When you see the bear's eye, what color are its eyes?",Black
 tc17,"When you see visible letters on the screen, what does it say?",AI
@@ -24,12 +24,12 @@ tc22,What is visible in the video?,Wheat
 tc23,"When you see chickens, how many chickens do you see?",3-5
 tc24,"When you see an orange, what is the man holding?",Knife
 tc25,"When you see purple gloves, what are the golves holding?","Block, Stick"
-tc26,"When you see a basket, how many apples are inside the basket?",9+
+tc26,"When you see a basket, how many apples are inside the basket?",4+
 tc27,"When you see a hand, how many strawberries are there?",7+
 tc28,"When you see the elephant's tail, what is it eating?",Grass
 tc29,What is visible in the video?,"White flowers, trees"
 tc30,"When you see the man's hand, how much money is he holding?",600+
-tc31,"When you see a parking lot, how many cars are there?",15+
+tc31,"When you see a parking lot, how many cars are there?",4+
 tc32,What is hapenning in the video?,Man holding ball
 tc33,"When you see a hand, what is it holding?",Toast
 tc34,"When you see a horse, what color is the horse?",Black
@@ -40,7 +40,7 @@ tc38,"When you see a bunny, what color is the bunny?",Brown
 tc39,"When you see a stitch machine, what is being stitched?",Cloth
 tc40,What is visible in the video?,Bridge
 tc41,"When you see a boat, what color is the boat?",Yellow
-tc42,"When the amount is over 500,000, what amount do you see?",500000+
+tc42,"When the amount is over 500,000, what amount do you see?",500000+ 
 tc43,"When you see hands, what food do you see?",Sushi/other ingredients
 tc44,"When the man is holding money, how much do you see?",100+
 tc45,"When you see water, what color is the turtle?",Brown/Black
@@ -48,4 +48,154 @@ tc46,"When you see onions, how many burger patties do you see?",1/2
 tc47,"When you see a phone, what is walking on top of the phone?",Dinosaur
 tc48,"When you see a canoe, where is the canoe?",Shore
 tc49,"When you see a jacket, what color is the jacket?",Pink
-tc_50,"When you see a bus, what color is the bus?",Green
+tc50,"When you see a bus, what color is the bus?",Green
+tc51,"When you see a tractor, what color is the tractor?",Green/White
+tc52,"When you see a man cutting, what is he cutting?",Jenga/Wood
+tc53,What is visible in the video?,"Beach, islands"
+tc54,"When you see a sponge, what is it cleaning?",Pan
+tc55,What is visible in the video?,Faucet
+tc56,"When you see a kangaroo, what is the kangaroo doing?","Eating, Standing"
+tc57,What is visible in the video?,Pedicure 
+tc58,"When you see gloves, what color are the gloves?",White
+tc59,"When you see hands, what are the hands holding?","Blow Dryer, Meat"
+tc60,"When you see fire, what color is the environment?",Dark/Black
+tc61,"When you see fishes, how many fishes are there?",Three
+tc62,What colors do you see in the video?,Blue and Green
+tc63,"When you see freezers, how many do you see?",9
+tc64,"When you see an animal, what animals do you see?",Deers
+tc65,"When you see the ocean, what is the man holding?",Fishing Rod
+tc66,"When you see a ladybug, what is the ladybut walking on?",Stem
+tc67,"When you see a hand, what is it holding?",Cheese
+tc68,"When you see a hand, what is it holding?",Technology 
+tc69,"When you see dumplings, how many dumplings do you see?",7
+tc70,What colors do you see in the video?,"Green,blue,purple,orange,brown/black"
+tc71,"When you see a bowl, what in inside the bowl?",Flakes
+tc72,"When you see her hands, what is she holding?",Sponge and Dish
+tc73,"When you see a tie, what color is the tie?",Gold
+tc74,When you see a cupm what color is the cup?,Red
+tc75,"When you see a knife, what is the knife cutting?",Onions
+tc76,"When you see a plant, what color are its flowers?",White
+tc77,"When you see hands, what are the hands holding?",Croissant and Coffee
+tc78,"When you see cake, what is the cake covered with?",Chocolate
+tc79,"When you see an eye, what color is the eye?",Brown
+tc80,"When you see a finger, what is the finger touching?",Screen/Tablet
+tc81,"When you see chops of chicken, how many pieces do you see?",15+
+tc82,What colors do you see in the video?,"Blue, green, purple"
+tc83,"When you see fishes, how many fishes are there?",20+
+tc84,"When you see hands, what are the hands holding?",Paper
+tc85,"When you see food, what food do you see?",Meat / BBQ
+tc86,"When you see a written message, what language is that message?",Chinese(?)
+tc87,"When you see a jug, what is inside the jug?",Juice
+tc88,"When you see a hand, what is it holding?",Megaphone
+tc89,What is visible in the video?,"Stars, sparkles"
+tc90,"When you see hands, what are the hands holding?","Hat, bag"
+tc91,"When you see glass bottles, how many glass bottles do you see?",12~
+tc92,"When you see a car, what color is the car?",White
+tc93,"When you see hands, what color are the fingernails?",Red
+tc94,"When you see elephants, how many ADULT elephants do you see?",2
+tc95,"When you see gloves, what color are the gloves?",Yellow
+tc96,"When you see trees, how many trees do you see?",10+
+tc97,What colors do you see in the video?,Black and Pink
+tc98,"When you see hands, what are the hands holding?",Wax and Metal
+tc99,"When you see a computer mouse, what is next to the mouse?",Keyboard
+tc100,What is visible in the video?,Statue
+tc101,"When you see wires, how many wires can you see?",5
+tc102,What colors do you see in the video?,"Pink, Black, White, Blue"
+tc103,"When you see a building, how many other buildings are there?",100+
+tc104,"When you see a dog, what color is the dog?","White, Peach"
+tc105,"When you see people walking, how many people are walking?",2
+tc106,"When you see goats, how many goats do you see?",10-15
+tc107,"When you see a hand, what is it holding?",Brush
+tc108,"When you see a hand, what is it holding?",Nail Cutter
+tc109,"When you see a box, what is inside the box?",Ring
+tc110,"When you see boats, how many boats do you see?",~10
+tc111,"When you see bridges, how many bridges do you see?",4
+tc112,What is visible in the video?,Sunflower
+tc113,"When you see a hand, what is it holding?",Spoon
+tc114,"When you see a bird, how many birds do you see?",10+
+tc115,What is visible in the video?,"Leaves, sky"
+tc116,"When you see cups, how many cups do you see?",2 (4 possibly)
+tc117,What colors do you see in the video?,"Lighlt blue, black, yellow"
+tc118,"When you see birds, how many do you see?",10
+tc119,"When you see a pan, what is frying on the pan?",Tomato
+tc120,"When you see hands, what colors are the hands touching?",Red and White
+tc121,"When you see hands, what are the hands touching?",Water
+tc122,"When you see a chicken, how many black chickens are there?",1
+tc123,"When you see a flower, what color is the flower?",White
+tc124,"When you see 7 pencils, what colors are all of the pencils?","Blue, red, green, yellow, pink, green, orange"
+tc125,What is visible in the video?,People walking in a outside area in a city
+tc126,What is visible in the video?,Leaves
+tc127,"When you see hands, what are the fingers touching?",Typewriter
+tc128,What colors do you see in the video?,White and Black
+tc129,"When you see a pen, what color is the pen?",Blue
+tc130,"When you see the fins underwater, what color are the fins?",Blue and Black
+tc131,"When you see her pick up the blue cloth, how does she pick up the blue cloth?",Stick with claw
+tc132,"When you see the man touch something, what color is the object he is touching?",Iron
+tc133,"When you see a spoon, what color is the spoon?",Silver
+tc134,"When you see a hand, what is it holding?",Money
+tc135,"When you see a hand, what is it holding?",Glass Cup
+tc136,"When you see a worm, what is the worm digging inside?",Dirt
+tc137,"When you see a tractor, what color is the tractor?",White and Gold
+tc138,"When you see a cat, what color is the cat?",Orange/Peach
+tc139,"When you see a black car, what car is behind the black car?",Silver car
+tc140,"When you see a dog, what breed is the dog?",Husky
+tc141,"When you see a hand, what is it holding?",Electronics
+tc142,"When you see a car, what color is the car?",Silver
+tc143,"When you see fishes, how many fishes are there?",8+
+tc144,"When you see an animal, what animal do you see?",Raccoon
+tc145,"When you see cupcakes, what flavor are the cupcakes?","Vanilla, Red Velvet, Chocolate"
+tc146,"When you see fingers, what are the fingers touching?",Curtain
+tc147,What is visible in the video?,Tree (leaves)
+tc148,What is visible in the video?,Tree (leaves)
+tc149,"When you see a hand, what is it holding?",The Letter S (Wood block)
+tc150,"When you see the ocean, how many people are in the ocean?",1
+tc151,"When you see a number visible, what number do you see?",Many possible 4 digit combinations
+tc152,"When you see gloves, what are the gloves holding?",Purple Ball
+tc153,"When you see hands, what are the hands holding? ",Plate/Glass/Utensils
+tc154,"When you see flowers, what color are the flowers?",Yellow
+tc155,"When you see gloves, what are the gloves holding?",Vegetable
+tc156,What is visible in the video?,Vegetable
+tc157,"When you see hands, what are the hands holding?",Tube/Door
+tc158,What is visible in the video?,"Field, Roads, Trees"
+tc159,"When you see seats, how many seats do you see?",5+
+tc160,What is visible in the video?,"Boats, Bay, Ocean, Dock"
+tc161,"When you see a knife, what is the knife cutting?",Beehive (honey)
+tc162,What is visible in the video?,Buildings/City/Moutains
+tc163,"When you see a goose, what color is the goose?",White and Black
+tc164,What is visible in the video?,Greenhouse farm
+tc165,"When you see hands, what are the hands holding?",Red Lettuce
+tc166,"When you see an ornament, where is the ornament hanging from?",A stem from a tree
+tc167,"When you see water, what is the water filling up?",A glass cup
+tc168,"When you see a bird, what color is the bird?",Black/Green
+tc169,"When you see an audience, what is the audience looking towards?",A stage
+tc170,"When you see a bird, what color is the beak of the bird?",Red
+tc171,"When you see a baby cow, what color is the baby cow?",Black
+tc172,"When you see teeth, what are the teeth made out of?",Clay
+tc173,What is visible in the video?,Waterfall
+tc174,"When you see cookie dough, how many seperate cookies do you see?",16
+tc175,"When you see hands, what are the hands holding?",Flower
+tc176,What is visible in the video?,Ocean
+tc177,"When you see a cat, what color is the cat?",Orange
+tc178,"When you see an air ticket, what color is the air ticket?",Red
+tc179,"When you see hands, what are the hands holding?",Honey Pallet
+tc180,"When you see gloves, what are the gloves holding?",Medical Equipment with water
+tc181,"When you see mountains, what color are the mountains?",Green
+tc182,"When you see a car, what is the car being pulled by?",A tractor/Wire
+tc183,"When you see hands, what are the hands holding?",Egg
+tc184,What is visible in the video?,River/Dam/Lake/Trees
+tc185,"When you see smoke, where is the smoke coming from?",Factory
+tc186,"When you see hands, what is the man doing?",Bandaging his hand
+tc187,"When you see a flower, what color is the flower?",White
+tc188,"Whemn you see a lady wearing white, what color is her hair?",Blonde/Black
+tc189,"When you see hands, what are the hands holding?",Makeup Pallet/Brush
+tc190,"When you see hands, what are the hands holding?",Bag and Spoon
+tc191,What is visible in the video?,Grass
+tc192,"When you see a drill, what is it drilling?",A White Wall
+tc193,"When you see wine, what color is the wine?",Red/Pink
+tc194,"When you the lady pick up something, what are the hands holding?",Purse
+tc195,"When you see bugs, how many bugs do you see?",2
+tc196,What colors do you see in the video?,Green/Pink etc
+tc197,What is visible in the video?,"Snow, Trees, Mountains"
+tc198,What is visible in the video?,Greenhouse farm
+tc199,"When you see a door, what color is the door?",Green
+tc200,"When you see a drone, what color is the drone?",White

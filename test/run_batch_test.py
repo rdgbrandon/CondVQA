@@ -1,4 +1,4 @@
-"""Batch test runner for CondVQA - runs all 50 test cases and compares against expected answers."""
+"""Batch test runner for CondVQA - runs all test cases and compares against expected answers."""
 
 import os
 import csv
