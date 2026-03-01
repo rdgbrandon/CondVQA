@@ -9,3 +9,4 @@ matplotlib
 requests
 opencv-python
 tqdm
+qwen-vl-utils
