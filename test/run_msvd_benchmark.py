@@ -1,16 +1,18 @@
 """
 MSVD-QA Benchmark Runner for CondVLM
-- Loads annotations from Hugging Face (no manual download)
-- Downloads videos automatically via yt-dlp
-- No manual downloads required
+- Loads annotations AND video frames directly from HuggingFace (morpheushoc/msvd-qa)
+- No manual downloads required, no yt-dlp needed
 """
 
 import os
 import sys
 import csv
-import subprocess
+import json
+import tempfile
+import struct
 import torch
 import gc
+import numpy as np
 from datetime import datetime
 
 # Add project src to path
@@ -20,38 +22,44 @@ from src import load_model, conditional_query_vqa_interpret
 from src.model_loader import load_text_model
 
 
-# ── Video download ─────────────────────────────────────────────────────────────
+def frames_to_video(frames_data, output_path, fps=1):
+    """
+    Write video frames from the dataset to an mp4 file using OpenCV.
+    frames_data: list of numpy arrays (H, W, C) or raw bytes
+    """
+    import cv2
 
-def download_video_yt_dlp(youtube_id, output_path, max_duration=60):
-    """Download a YouTube video via yt-dlp. Returns True on success."""
-    if os.path.exists(output_path):
-        return True
-
-    url = f"https://www.youtube.com/watch?v={youtube_id}"
-    cmd = [
-        "yt-dlp",
-        "--quiet",
-        "--no-warnings",
-        "--match-filter", f"duration < {max_duration}",
-        "-f", "mp4/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "-o", output_path,
-        url
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if result.returncode == 0 and os.path.exists(output_path):
-            return True
-        webm_path = output_path.replace(".mp4", ".webm")
-        if os.path.exists(webm_path):
-            os.rename(webm_path, output_path)
-            return True
-        return False
-    except Exception as e:
-        print(f"    yt-dlp error for {youtube_id}: {e}")
+    if not frames_data:
         return False
 
+    # Handle different possible formats
+    first = frames_data[0]
+    if isinstance(first, (bytes, bytearray)):
+        # Try to decode as JPEG/PNG bytes
+        frames = []
+        for f in frames_data:
+            arr = np.frombuffer(f, dtype=np.uint8)
+            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if img is not None:
+                frames.append(img)
+    elif isinstance(first, np.ndarray):
+        frames = [f for f in frames_data if f is not None]
+    else:
+        return False
 
-# ── Main benchmark function ────────────────────────────────────────────────────
+    if not frames:
+        return False
+
+    h, w = frames[0].shape[:2]
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+    for frame in frames:
+        if frame.shape[:2] != (h, w):
+            frame = cv2.resize(frame, (w, h))
+        writer.write(frame)
+    writer.release()
+    return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+
 
 def run_msvd_benchmark(
     model=None,
@@ -64,23 +72,21 @@ def run_msvd_benchmark(
     fps_sample=1,
     confidence_threshold=0.5,
     aggregation_method='most_confident',
-    max_video_duration=60,
     save_results=True,
     show_visualizations=False,
 ):
     """
-    Run CondVLM against the MSVD-QA test set.
+    Run CondVLM against the MSVD-QA test set loaded from HuggingFace.
 
     Args:
         model / processor:           Vision-language model (auto-loaded if None)
         text_model / text_tokenizer: Text LLM for parsing (auto-loaded if None)
         output_dir:                  Where to save results (default: test/msvd_results)
-        data_dir:                    Where to cache videos (default: test/msvd_data)
-        max_samples:                 How many test questions to evaluate (None = all)
-        fps_sample:                  Frames per second to sample from each video
+        data_dir:                    Where to cache temp videos (default: test/msvd_data)
+        max_samples:                 How many videos to evaluate (None = all)
+        fps_sample:                  Frames per second to sample
         confidence_threshold:        Frame-matching confidence cutoff
         aggregation_method:          How to aggregate multi-frame results
-        max_video_duration:          Skip videos longer than this many seconds
         save_results:                Write results to CSV
         show_visualizations:         Show IG plots (disable for batch)
 
@@ -99,66 +105,68 @@ def run_msvd_benchmark(
     os.makedirs(video_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
-    # ── 1. Load annotations from Hugging Face ──
-    print("\n[1/4] Loading MSVD-QA annotations from Hugging Face...")
-    ds = load_dataset("AlexZigma/msvd-qa", split="test")
-    print(f"  Loaded {len(ds)} QA pairs from HuggingFace")
+    # ── 1. Load dataset from HuggingFace ──
+    print("\n[1/3] Loading MSVD-QA from HuggingFace (morpheushoc/msvd-qa)...")
+    ds = load_dataset("morpheushoc/msvd-qa", split="test")
+    print(f"  Loaded {len(ds)} videos")
     print(f"  Columns: {ds.column_names}")
 
-    # Deduplicate by video, cap at max_samples
-    seen_videos = set()
-    test_cases = []
-    for item in ds:
-        vid_id = str(item.get('video_id') or item.get('video_name') or item.get('id'))
-        # get youtube id if available
-        yt_id   = item.get('youtube_id') or item.get('ytid') or item.get('yt_id') or None
-        question = item.get('question', '')
-        answer   = item.get('answer', '')
+    # Inspect first row to understand structure
+    row0 = ds[0]
+    print(f"\n  Sample entry keys: {list(row0.keys())}")
+    qa0 = row0.get('qa', [])
+    if qa0:
+        first_qa = qa0[0] if isinstance(qa0, list) else qa0
+        print(f"  Sample QA: {first_qa}")
 
-        if vid_id not in seen_videos:
-            seen_videos.add(vid_id)
-            test_cases.append({
-                'video_id':   vid_id,
-                'question':   question,
-                'expected':   answer,
-                'youtube_id': yt_id,
-            })
+    # ── 2. Build test cases ──
+    test_cases = []
+    for i, row in enumerate(ds):
+        video_path_id = row.get('video_path', f'vid_{i}')
+        vid_id = os.path.splitext(os.path.basename(str(video_path_id)))[0]
+
+        qa_pairs = row.get('qa', [])
+        if not qa_pairs:
+            continue
+
+        # qa may be a list of dicts or a list of strings — handle both
+        first_qa = qa_pairs[0] if isinstance(qa_pairs, list) else qa_pairs
+        if isinstance(first_qa, dict):
+            question = first_qa.get('question', '')
+            answer   = first_qa.get('answer', '')
+        elif isinstance(first_qa, str):
+            # Try JSON parse
+            try:
+                parsed = json.loads(first_qa)
+                question = parsed.get('question', '')
+                answer   = parsed.get('answer', '')
+            except Exception:
+                question = first_qa
+                answer   = ''
+        else:
+            continue
+
+        if not question:
+            continue
+
+        test_cases.append({
+            'video_id':     vid_id,
+            'question':     question,
+            'expected':     answer,
+            'binary_frames': row.get('binary_frames', None),
+            'num_frames':   row.get('num_frames', 0),
+            'height':       row.get('height', 0),
+            'width':        row.get('width', 0),
+            'channels':     row.get('channels', 3),
+        })
+
         if max_samples and len(test_cases) >= max_samples:
             break
 
-    print(f"  Selected {len(test_cases)} test cases (max_samples={max_samples})")
-
-    # Print a sample so we can verify the format
-    print(f"\n  Sample entry:")
-    print(f"    video_id   : {test_cases[0]['video_id']}")
-    print(f"    question   : {test_cases[0]['question']}")
-    print(f"    expected   : {test_cases[0]['expected']}")
-    print(f"    youtube_id : {test_cases[0]['youtube_id']}")
-
-    # ── 2. Download videos via yt-dlp ──
-    print(f"\n[2/4] Downloading videos via yt-dlp...")
-    for i, tc in enumerate(test_cases):
-        yt_id = tc['youtube_id']
-        if not yt_id:
-            print(f"  [{i+1}/{len(test_cases)}] {tc['video_id']} — no YouTube ID, skipping")
-            tc['video_path'] = None
-            continue
-
-        video_path = os.path.join(video_dir, f"{tc['video_id']}.mp4")
-        tc['video_path'] = video_path
-
-        if os.path.exists(video_path):
-            print(f"  [{i+1}/{len(test_cases)}] {tc['video_id']} — cached")
-            continue
-
-        print(f"  [{i+1}/{len(test_cases)}] {tc['video_id']} ({yt_id}) — downloading...")
-        success = download_video_yt_dlp(yt_id, video_path, max_duration=max_video_duration)
-        if not success:
-            print(f"    Failed to download {tc['video_id']}")
-            tc['video_path'] = None
+    print(f"\n  Selected {len(test_cases)} test cases")
 
     # ── 3. Load models ──
-    print("\n[3/4] Loading models...")
+    print("\n[2/3] Loading models...")
     if model is None or processor is None:
         print("  Loading vision-language model...")
         model, processor = load_model()
@@ -180,11 +188,31 @@ def run_msvd_benchmark(
         print(f"  Expected : {tc['expected']}")
         print(f"{'#'*70}")
 
-        if tc.get('video_path') is None or not os.path.exists(tc['video_path']):
-            print("  SKIPPED — video not available")
-            results.append({**tc, 'prediction': 'N/A', 'confidence': 0.0,
-                            'status': 'SKIPPED', 'error': 'Video unavailable'})
-            continue
+        # Build temp video from binary_frames
+        video_path = os.path.join(video_dir, f"{tc['video_id']}.mp4")
+        if not os.path.exists(video_path):
+            frames_data = tc.get('binary_frames')
+            if frames_data is None:
+                print("  SKIPPED — no frame data")
+                results.append({
+                    'video_id': tc['video_id'], 'question': tc['question'],
+                    'expected': tc['expected'], 'prediction': 'N/A',
+                    'confidence': 0.0, 'status': 'SKIPPED', 'error': 'No frame data'
+                })
+                continue
+
+            if not isinstance(frames_data, list):
+                frames_data = [frames_data]
+
+            ok = frames_to_video(frames_data, video_path, fps=fps_sample)
+            if not ok:
+                print("  SKIPPED — could not reconstruct video")
+                results.append({
+                    'video_id': tc['video_id'], 'question': tc['question'],
+                    'expected': tc['expected'], 'prediction': 'N/A',
+                    'confidence': 0.0, 'status': 'SKIPPED', 'error': 'Video reconstruction failed'
+                })
+                continue
 
         gc.collect()
         torch.cuda.empty_cache()
@@ -195,7 +223,7 @@ def run_msvd_benchmark(
 
         try:
             cond_results = conditional_query_vqa_interpret(
-                video_path=tc['video_path'],
+                video_path=video_path,
                 questions=[tc['question']],
                 model=model,
                 processor=processor,
@@ -265,10 +293,10 @@ def run_msvd_benchmark(
     skip = sum(1 for r in results if r['status'] == 'SKIPPED')
     fail = sum(1 for r in results if r['status'] == 'FAILED')
 
-    print(f"{'Video ID':<12} {'Status':<10} {'Conf':<8} {'Prediction':<30} {'Expected':<25}")
-    print("-" * 85)
+    print(f"{'Video ID':<20} {'Status':<10} {'Conf':<8} {'Prediction':<30} {'Expected':<25}")
+    print("-" * 93)
     for r in results:
-        print(f"{r['video_id']:<12} {r['status']:<10} {r['confidence']:<8.2%} "
+        print(f"{r['video_id']:<20} {r['status']:<10} {r['confidence']:<8.2%} "
               f"{str(r['prediction'])[:28]:<30} {str(r['expected'])[:23]:<25}")
 
     print(f"\n{'─'*70}")
