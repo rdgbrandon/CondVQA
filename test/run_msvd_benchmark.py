@@ -1,16 +1,14 @@
 """
 MSVD-QA Benchmark Runner for CondVLM
-- Downloads annotations automatically from GitHub
-- Downloads videos automatically via yt-dlp using the YouTube ID mapping
+- Loads annotations from Hugging Face (no manual download)
+- Downloads videos automatically via yt-dlp
 - No manual downloads required
 """
 
 import os
 import sys
-import json
 import csv
 import subprocess
-import urllib.request
 import torch
 import gc
 from datetime import datetime
@@ -22,53 +20,10 @@ from src import load_model, conditional_query_vqa_interpret
 from src.model_loader import load_text_model
 
 
-# ── URLs ──────────────────────────────────────────────────────────────────────
-MSVD_QA_TEST_URL = (
-    "https://raw.githubusercontent.com/xudejing/video-question-answering"
-    "/master/data/msvd/test_qa.json"
-)
-MSVD_YOUTUBE_MAPPING_URL = (
-    "https://raw.githubusercontent.com/xudejing/video-question-answering"
-    "/master/data/msvd/youtube_mapping.txt"
-)
-
-
-# ── Download helpers ───────────────────────────────────────────────────────────
-
-def download_file(url, dest_path):
-    """Download a file from url to dest_path if not already present."""
-    if os.path.exists(dest_path):
-        print(f"  Already exists: {dest_path}")
-        return
-    print(f"  Downloading {os.path.basename(dest_path)} ...")
-    urllib.request.urlretrieve(url, dest_path)
-    print(f"  Saved to {dest_path}")
-
-
-def load_youtube_mapping(mapping_path):
-    """
-    Parse youtube_mapping.txt → {vid_id: youtube_id}
-    Format per line:  vid1 <youtube_id>
-    """
-    mapping = {}
-    with open(mapping_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) >= 2:
-                vid_id, yt_id = parts[0], parts[1]
-                mapping[vid_id] = yt_id
-    return mapping
-
+# ── Video download ─────────────────────────────────────────────────────────────
 
 def download_video_yt_dlp(youtube_id, output_path, max_duration=60):
-    """
-    Download a YouTube video to output_path using yt-dlp.
-    Skips if file already exists.
-    Returns True on success, False on failure.
-    """
+    """Download a YouTube video via yt-dlp. Returns True on success."""
     if os.path.exists(output_path):
         return True
 
@@ -86,7 +41,6 @@ def download_video_yt_dlp(youtube_id, output_path, max_duration=60):
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode == 0 and os.path.exists(output_path):
             return True
-        # yt-dlp may save with a different extension — check for .webm fallback
         webm_path = output_path.replace(".mp4", ".webm")
         if os.path.exists(webm_path):
             os.rename(webm_path, output_path)
@@ -97,7 +51,7 @@ def download_video_yt_dlp(youtube_id, output_path, max_duration=60):
         return False
 
 
-# ── Main benchmark function ───────────────────────────────────────────────────
+# ── Main benchmark function ────────────────────────────────────────────────────
 
 def run_msvd_benchmark(
     model=None,
@@ -118,75 +72,75 @@ def run_msvd_benchmark(
     Run CondVLM against the MSVD-QA test set.
 
     Args:
-        model / processor:          Vision-language model (auto-loaded if None)
+        model / processor:           Vision-language model (auto-loaded if None)
         text_model / text_tokenizer: Text LLM for parsing (auto-loaded if None)
-        output_dir:                 Where to save results (default: test/msvd_results)
-        data_dir:                   Where to cache annotations + videos
-                                    (default: test/msvd_data)
-        max_samples:                How many test questions to evaluate (None = all ~13k)
-        fps_sample:                 Frames per second to sample from each video
-        confidence_threshold:       Frame-matching confidence cutoff
-        aggregation_method:         How to aggregate multi-frame results
-        max_video_duration:         Skip videos longer than this many seconds
-        save_results:               Write per-question results to CSV
-        show_visualizations:        Show IG plots (disable for batch)
+        output_dir:                  Where to save results (default: test/msvd_results)
+        data_dir:                    Where to cache videos (default: test/msvd_data)
+        max_samples:                 How many test questions to evaluate (None = all)
+        fps_sample:                  Frames per second to sample from each video
+        confidence_threshold:        Frame-matching confidence cutoff
+        aggregation_method:          How to aggregate multi-frame results
+        max_video_duration:          Skip videos longer than this many seconds
+        save_results:                Write results to CSV
+        show_visualizations:         Show IG plots (disable for batch)
 
     Returns:
         list of result dicts
     """
+    from datasets import load_dataset
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-
     if data_dir is None:
         data_dir = os.path.join(script_dir, 'msvd_data')
     if output_dir is None:
         output_dir = os.path.join(script_dir, 'msvd_results')
 
     video_dir = os.path.join(data_dir, 'videos')
-    os.makedirs(data_dir, exist_ok=True)
     os.makedirs(video_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
-    # ── 1. Download annotations ──
-    print("\n[1/4] Downloading MSVD-QA annotations...")
-    qa_path      = os.path.join(data_dir, 'test_qa.json')
-    mapping_path = os.path.join(data_dir, 'youtube_mapping.txt')
-    download_file(MSVD_QA_TEST_URL, qa_path)
-    download_file(MSVD_YOUTUBE_MAPPING_URL, mapping_path)
+    # ── 1. Load annotations from Hugging Face ──
+    print("\n[1/4] Loading MSVD-QA annotations from Hugging Face...")
+    ds = load_dataset("AlexZigma/msvd-qa", split="test")
+    print(f"  Loaded {len(ds)} QA pairs from HuggingFace")
+    print(f"  Columns: {ds.column_names}")
 
-    # ── 2. Load annotations ──
-    print("\n[2/4] Loading annotations...")
-    with open(qa_path, 'r') as f:
-        qa_data = json.load(f)
-
-    youtube_mapping = load_youtube_mapping(mapping_path)
-    print(f"  Loaded {len(qa_data)} QA pairs")
-    print(f"  YouTube mapping: {len(youtube_mapping)} videos")
-
-    # Deduplicate by video so we test diverse videos, then cap at max_samples
+    # Deduplicate by video, cap at max_samples
     seen_videos = set()
     test_cases = []
-    for item in qa_data:
-        vid_id = f"vid{item['video_id']}"
+    for item in ds:
+        vid_id = str(item.get('video_id') or item.get('video_name') or item.get('id'))
+        # get youtube id if available
+        yt_id   = item.get('youtube_id') or item.get('ytid') or item.get('yt_id') or None
+        question = item.get('question', '')
+        answer   = item.get('answer', '')
+
         if vid_id not in seen_videos:
             seen_videos.add(vid_id)
             test_cases.append({
-                'video_id':  vid_id,
-                'question':  item['question'],
-                'expected':  item['answer'],
-                'youtube_id': youtube_mapping.get(vid_id, None)
+                'video_id':   vid_id,
+                'question':   question,
+                'expected':   answer,
+                'youtube_id': yt_id,
             })
         if max_samples and len(test_cases) >= max_samples:
             break
 
     print(f"  Selected {len(test_cases)} test cases (max_samples={max_samples})")
 
-    # ── 3. Download videos via yt-dlp ──
-    print(f"\n[3/4] Downloading videos via yt-dlp (skipping already cached)...")
+    # Print a sample so we can verify the format
+    print(f"\n  Sample entry:")
+    print(f"    video_id   : {test_cases[0]['video_id']}")
+    print(f"    question   : {test_cases[0]['question']}")
+    print(f"    expected   : {test_cases[0]['expected']}")
+    print(f"    youtube_id : {test_cases[0]['youtube_id']}")
+
+    # ── 2. Download videos via yt-dlp ──
+    print(f"\n[2/4] Downloading videos via yt-dlp...")
     for i, tc in enumerate(test_cases):
         yt_id = tc['youtube_id']
-        if yt_id is None:
-            print(f"  [{i+1}/{len(test_cases)}] {tc['video_id']} — no YouTube ID, will skip")
+        if not yt_id:
+            print(f"  [{i+1}/{len(test_cases)}] {tc['video_id']} — no YouTube ID, skipping")
             tc['video_path'] = None
             continue
 
@@ -203,8 +157,8 @@ def run_msvd_benchmark(
             print(f"    Failed to download {tc['video_id']}")
             tc['video_path'] = None
 
-    # ── 4. Load models ──
-    print("\n[4/4] Loading models...")
+    # ── 3. Load models ──
+    print("\n[3/4] Loading models...")
     if model is None or processor is None:
         print("  Loading vision-language model...")
         model, processor = load_model()
@@ -212,7 +166,7 @@ def run_msvd_benchmark(
         print("  Loading text model...")
         text_model, text_tokenizer = load_text_model()
 
-    # ── 5. Run inference ──
+    # ── 4. Run inference ──
     print(f"\n{'='*70}")
     print("RUNNING MSVD-QA BENCHMARK")
     print(f"{'='*70}\n")
@@ -260,17 +214,17 @@ def run_msvd_benchmark(
             if question_key in cond_results:
                 res = cond_results[question_key]
                 if 'error' in res:
-                    prediction  = 'ERROR'
-                    confidence  = 0.0
-                    error_msg   = res['error']
+                    prediction = 'ERROR'
+                    confidence = 0.0
+                    error_msg  = res['error']
                 else:
-                    prediction  = res.get('prediction', 'N/A')
-                    confidence  = res.get('confidence', 0.0)
-                    error_msg   = None
+                    prediction = res.get('prediction', 'N/A')
+                    confidence = res.get('confidence', 0.0)
+                    error_msg  = None
             else:
-                prediction  = 'NO_RESULT'
-                confidence  = 0.0
-                error_msg   = 'Question key not found in results'
+                prediction = 'NO_RESULT'
+                confidence = 0.0
+                error_msg  = 'Question key not found in results'
 
             print(f"\n  >> Prediction : {prediction}")
             print(f"  >> Expected   : {tc['expected']}")
@@ -306,8 +260,8 @@ def run_msvd_benchmark(
     print("MSVD-QA BENCHMARK RESULTS")
     print(f"{'='*70}\n")
 
-    ok = sum(1 for r in results if r['status'] == 'OK')
-    err = sum(1 for r in results if r['status'] == 'ERROR')
+    ok   = sum(1 for r in results if r['status'] == 'OK')
+    err  = sum(1 for r in results if r['status'] == 'ERROR')
     skip = sum(1 for r in results if r['status'] == 'SKIPPED')
     fail = sum(1 for r in results if r['status'] == 'FAILED')
 
@@ -321,7 +275,6 @@ def run_msvd_benchmark(
     print(f"Total: {len(results)} | OK: {ok} | Errors: {err} | Skipped: {skip} | Failed: {fail}")
     print(f"{'─'*70}\n")
 
-    # Save CSV
     if save_results:
         csv_path = os.path.join(output_dir, f'msvd_results_{datetime.now():%Y%m%d_%H%M%S}.csv')
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
