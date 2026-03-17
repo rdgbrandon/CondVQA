@@ -22,40 +22,29 @@ from src import load_model, conditional_query_vqa_interpret
 from src.model_loader import load_text_model
 
 
-def frames_to_video(frames_data, output_path, fps=1):
+def frames_to_video(raw_bytes, output_path, num_frames, height, width, channels, fps=1):
     """
-    Write video frames from the dataset to an mp4 file using OpenCV.
-    frames_data: list of numpy arrays (H, W, C) or raw bytes
+    Reconstruct an mp4 from raw pixel bytes using OpenCV.
+    raw_bytes: flat bytes of shape (num_frames * height * width * channels,)
     """
     import cv2
 
-    if not frames_data:
+    if not raw_bytes or num_frames == 0 or height == 0 or width == 0:
         return False
 
-    # Handle different possible formats
-    first = frames_data[0]
-    if isinstance(first, (bytes, bytearray)):
-        # Try to decode as JPEG/PNG bytes
-        frames = []
-        for f in frames_data:
-            arr = np.frombuffer(f, dtype=np.uint8)
-            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-            if img is not None:
-                frames.append(img)
-    elif isinstance(first, np.ndarray):
-        frames = [f for f in frames_data if f is not None]
-    else:
+    arr = np.frombuffer(raw_bytes, dtype=np.uint8)
+    expected = num_frames * height * width * channels
+    if len(arr) < expected:
         return False
 
-    if not frames:
-        return False
+    arr = arr[:expected].reshape(num_frames, height, width, channels)
 
-    h, w = frames[0].shape[:2]
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
-    for frame in frames:
-        if frame.shape[:2] != (h, w):
-            frame = cv2.resize(frame, (w, h))
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    for i in range(num_frames):
+        frame = arr[i]
+        if channels == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         writer.write(frame)
     writer.release()
     return os.path.exists(output_path) and os.path.getsize(output_path) > 0
@@ -203,10 +192,12 @@ def run_msvd_benchmark(
                 })
                 continue
 
-            if not isinstance(frames_data, list):
-                frames_data = [frames_data]
-
-            ok = frames_to_video(frames_data, video_path, fps=fps_sample)
+            ok = frames_to_video(
+                frames_data, video_path,
+                num_frames=tc['num_frames'], height=tc['height'],
+                width=tc['width'],     channels=tc['channels'],
+                fps=fps_sample
+            )
             if not ok:
                 print("  SKIPPED — could not reconstruct video")
                 results.append({
