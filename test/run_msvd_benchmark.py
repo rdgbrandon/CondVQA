@@ -129,13 +129,15 @@ def run_msvd_benchmark(
         if not qa_pairs:
             continue
 
-        # qa may be a list of dicts or a list of strings — handle both
+        # qa is a list: [question, answer]
         first_qa = qa_pairs[0] if isinstance(qa_pairs, list) else qa_pairs
-        if isinstance(first_qa, dict):
+        if isinstance(first_qa, list) and len(first_qa) >= 2:
+            question = first_qa[0]
+            answer   = first_qa[1]
+        elif isinstance(first_qa, dict):
             question = first_qa.get('question', '')
             answer   = first_qa.get('answer', '')
         elif isinstance(first_qa, str):
-            # Try JSON parse
             try:
                 parsed = json.loads(first_qa)
                 question = parsed.get('question', '')
