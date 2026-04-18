@@ -474,7 +474,8 @@ def conditional_query_vqa_interpret(
     confidence_threshold=0.5,
     show_visualizations=True,
     save_results=True,
-    include_text_attribution=False
+    include_text_attribution=False,
+    force_simple=False
 ):
     """
     Answer complex conditional questions using LLM-based parsing and two-stage analysis.
@@ -563,9 +564,19 @@ def conditional_query_vqa_interpret(
         print(f"Question {q_idx}/{len(questions)}: {question}")
         print(f"{'='*70}\n")
 
-        # Step 1: Parse question with text LLM
-        print("Parsing question with text LLM...")
-        parsed = parse_question_with_llm(question, text_model, text_tokenizer)
+        # Step 1: Parse question with text LLM (or force simple for ablation)
+        if force_simple:
+            print("Ablation mode: forcing SIMPLE (general) treatment — skipping LLM parsing")
+            parsed = {
+                'original_question': question,
+                'type': 'simple',
+                'frame_condition': None,
+                'answer_question': question,
+                'timestamp': None
+            }
+        else:
+            print("Parsing question with text LLM...")
+            parsed = parse_question_with_llm(question, text_model, text_tokenizer)
 
         print(f"Question Type: {parsed['type']}")
         if parsed['type'] == 'conditional':
