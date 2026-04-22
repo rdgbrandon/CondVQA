@@ -1,7 +1,7 @@
 """
 MSRVTT-QA Benchmark Runner for CondVLM
-- Loads QA annotations from official JSON (xudejing/video-question-answering format)
-- Loads videos from a local directory
+- Loads from HuggingFace (morpheushoc/msrvtt-qa) with embedded frames  OR
+  from a local JSON annotations file + video directory
 - Randomly samples 200 test QA pairs (seed=42)
 - Per-question-type accuracy breakdown: what / who / how / when / where / other
 """
@@ -13,6 +13,7 @@ import json
 import random
 import gc
 import torch
+import numpy as np
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'TemporalVLM_IG', 'src'))
@@ -39,14 +40,37 @@ def is_correct(prediction, expected):
     return pred == exp or exp in pred or pred in exp
 
 
+def frames_to_video(raw_bytes, output_path, num_frames, height, width, channels, fps=1):
+    """Reconstruct mp4 from raw pixel bytes (same as run_msvd_benchmark)."""
+    import cv2
+    if not raw_bytes or num_frames == 0 or height == 0 or width == 0:
+        return False
+    arr = np.frombuffer(raw_bytes, dtype=np.uint8)
+    expected = num_frames * height * width * channels
+    if len(arr) < expected:
+        return False
+    arr = arr[:expected].reshape(num_frames, height, width, channels)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    for i in range(num_frames):
+        frame = arr[i]
+        if channels == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        writer.write(frame)
+    writer.release()
+    return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+
+
 def run_msrvtt_benchmark(
-    qa_json_path,
-    video_dir,
+    qa_json_path=None,
+    video_dir=None,
+    hf_dataset='morpheushoc/msrvtt-qa',
     model=None,
     processor=None,
     text_model=None,
     text_tokenizer=None,
     output_dir=None,
+    data_dir=None,
     max_samples=200,
     seed=42,
     fps_sample=1,
@@ -58,18 +82,24 @@ def run_msrvtt_benchmark(
     """
     Run CondVLM against a random 200-sample subset of MSRVTT-QA test split.
 
+    Two loading modes (first available wins):
+      A) HuggingFace: set hf_dataset (default 'morpheushoc/msrvtt-qa') — no local files needed
+      B) Local:       set qa_json_path + video_dir
+
     Args:
-        qa_json_path:  Path to test_qa.json (list of {video_id, question, answer})
-        video_dir:     Directory containing videoXXXX.mp4 files
-        model/processor/text_model/text_tokenizer: pre-loaded models (auto-loaded if None)
+        qa_json_path:  Path to test_qa.json  [local mode]
+        video_dir:     Directory with videoXXXX.mp4 files  [local mode]
+        hf_dataset:    HuggingFace dataset id  [HF mode]
+        data_dir:      Where to cache reconstructed videos  [HF mode]
+        model/processor/text_model/text_tokenizer: pre-loaded (auto-loaded if None)
         output_dir:    Where to save results
         max_samples:   Number of QA pairs to evaluate (default 200)
         seed:          Random seed for sampling (default 42)
         fps_sample:    Frames per second to extract
         confidence_threshold: Frame-condition confidence cutoff
         aggregation_method:   'most_confident' | 'consensus' | 'average'
-        save_results:  Write per-sample and summary CSVs
-        show_visualizations: Show IG plots (disable for batch)
+        save_results:  Write CSVs
+        show_visualizations: Show IG plots
 
     Returns:
         list of result dicts
@@ -80,13 +110,58 @@ def run_msrvtt_benchmark(
     os.makedirs(output_dir, exist_ok=True)
 
     # ── 1. Load & sample annotations ──────────────────────────────────────────
-    print(f"\n[1/3] Loading MSRVTT-QA annotations from {qa_json_path} ...")
-    with open(qa_json_path, 'r', encoding='utf-8') as f:
-        qa_data = json.load(f)
-    print(f"  Loaded {len(qa_data)} total test QA pairs")
+    use_hf = (qa_json_path is None)
+
+    if use_hf:
+        from datasets import load_dataset
+        if data_dir is None:
+            data_dir = os.path.join(SCRIPT_DIR, 'msrvtt_data')
+        video_dir = os.path.join(data_dir, 'videos')
+        os.makedirs(video_dir, exist_ok=True)
+
+        print(f"\n[1/3] Loading MSRVTT-QA from HuggingFace ({hf_dataset}) ...")
+        ds = load_dataset(hf_dataset, split='test')
+        print(f"  Loaded {len(ds)} rows  |  columns: {ds.column_names}")
+
+        all_cases = []
+        for i, row in enumerate(ds):
+            video_path_id = row.get('video_path', f'vid_{i}')
+            vid_id = os.path.splitext(os.path.basename(str(video_path_id)))[0]
+            qa_pairs = row.get('qa', [])
+            if not qa_pairs:
+                continue
+            first_qa = qa_pairs[0] if isinstance(qa_pairs, list) else qa_pairs
+            if isinstance(first_qa, list) and len(first_qa) >= 2:
+                question, answer = first_qa[0], first_qa[1]
+            elif isinstance(first_qa, dict):
+                question, answer = first_qa.get('question', ''), first_qa.get('answer', '')
+            else:
+                continue
+            if not question:
+                continue
+            all_cases.append({
+                'video_id':      vid_id,
+                'question':      question,
+                'expected':      str(answer),
+                'binary_frames': row.get('binary_frames'),
+                'num_frames':    row.get('num_frames', 0),
+                'height':        row.get('height', 0),
+                'width':         row.get('width', 0),
+                'channels':      row.get('channels', 3),
+            })
+    else:
+        print(f"\n[1/3] Loading MSRVTT-QA annotations from {qa_json_path} ...")
+        with open(qa_json_path, 'r', encoding='utf-8') as f:
+            qa_data = json.load(f)
+        print(f"  Loaded {len(qa_data)} total test QA pairs")
+        all_cases = [
+            {'video_id': str(qa['video_id']), 'question': qa['question'],
+             'expected': str(qa['answer'])}
+            for qa in qa_data
+        ]
 
     random.seed(seed)
-    sample = random.sample(qa_data, min(max_samples, len(qa_data)))
+    sample = random.sample(all_cases, min(max_samples, len(all_cases)))
     print(f"  Sampled {len(sample)} pairs (seed={seed})")
 
     # ── 2. Load models ─────────────────────────────────────────────────────────
@@ -105,19 +180,34 @@ def run_msrvtt_benchmark(
 
     results = []
 
-    for i, qa in enumerate(sample):
-        video_id = str(qa['video_id'])
-        question = qa['question']
-        expected = str(qa['answer'])
+    for i, tc in enumerate(sample):
+        video_id = str(tc['video_id'])
+        question = tc['question']
+        expected = tc['expected']
         qtype    = get_question_type(question)
 
-        # MSRVTT videos are named video7010.mp4, video7011.mp4, etc.
+        # Locate or reconstruct video
         video_path = None
-        for name in [f"video{video_id}.mp4", f"{video_id}.mp4"]:
-            p = os.path.join(video_dir, name)
-            if os.path.exists(p):
-                video_path = p
-                break
+        candidate  = os.path.join(video_dir, f"{video_id}.mp4")
+
+        if use_hf:
+            if not os.path.exists(candidate):
+                ok = frames_to_video(
+                    tc.get('binary_frames'), candidate,
+                    num_frames=tc.get('num_frames', 0), height=tc.get('height', 0),
+                    width=tc.get('width', 0), channels=tc.get('channels', 3),
+                    fps=fps_sample,
+                )
+                if ok:
+                    video_path = candidate
+            else:
+                video_path = candidate
+        else:
+            for name in [f"video{video_id}.mp4", f"{video_id}.mp4"]:
+                p = os.path.join(video_dir, name)
+                if os.path.exists(p):
+                    video_path = p
+                    break
 
         print(f"\n{'#'*70}")
         print(f"[{i+1}/{len(sample)}] video_id={video_id}  type={qtype}")
@@ -126,7 +216,7 @@ def run_msrvtt_benchmark(
         print(f"{'#'*70}")
 
         if video_path is None:
-            print(f"  SKIPPED — video not found in {video_dir}")
+            print(f"  SKIPPED — video not found / reconstruction failed")
             results.append({
                 'video_id': video_id, 'question_type': qtype,
                 'question': question, 'expected': expected,
