@@ -1,9 +1,8 @@
 """
-MSRVTT Benchmark Runner for CondVLM
-- Loads from HuggingFace: morpheushoc/msrvtt (binary_frames, same format as msvd-qa)
-- Frames task as: Q = "What is happening in this video?"  A = first caption
+YouCook2 Benchmark Runner for CondVLM
+- Loads from HuggingFace: morpheushoc/youcook2 (binary_frames, same format as msvd-qa)
+- Frames task as: Q = "What is being prepared in this video?"  A = caption
 - Randomly samples 200 test clips (seed=42)
-- Per-question-type accuracy (what/who/how/when/where — fixed question so all are 'what')
 """
 
 import os
@@ -22,7 +21,7 @@ from src.model_loader import load_text_model
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-QUESTION    = "What is happening in this video?"
+QUESTION    = "What is being prepared or cooked in this video?"
 
 
 def frames_to_video(raw_bytes, output_path, num_frames, height, width, channels, fps=1):
@@ -55,7 +54,7 @@ def is_correct(prediction, expected):
     return pred == exp or exp in pred or pred in exp
 
 
-def run_msrvtt_benchmark(
+def run_youcook2_benchmark(
     model=None,
     processor=None,
     text_model=None,
@@ -71,8 +70,8 @@ def run_msrvtt_benchmark(
     show_visualizations=False,
 ):
     """
-    Run CondVLM against 200 randomly sampled MSRVTT test clips.
-    Loads binary frames from morpheushoc/msrvtt (no downloads required).
+    Run CondVLM against 200 randomly sampled YouCook2 test clips.
+    Loads binary frames from morpheushoc/youcook2 (no downloads required).
 
     Returns:
         list of result dicts
@@ -81,31 +80,25 @@ def run_msrvtt_benchmark(
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     if data_dir is None:
-        data_dir = os.path.join(script_dir, 'msrvtt_data')
+        data_dir = os.path.join(script_dir, 'youcook2_data')
     if output_dir is None:
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        output_dir = os.path.join(script_dir, f'msrvtt_results_{ts}')
+        output_dir = os.path.join(script_dir, f'youcook2_results_{ts}')
 
     video_dir = os.path.join(data_dir, 'videos')
     os.makedirs(video_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
     # ── 1. Load dataset ────────────────────────────────────────────────────────
-    print("\n[1/3] Loading MSRVTT from HuggingFace (morpheushoc/msrvtt) ...")
-    ds = load_dataset("morpheushoc/msrvtt", split="test")
+    print("\n[1/3] Loading YouCook2 from HuggingFace (morpheushoc/youcook2) ...")
+    ds = load_dataset("morpheushoc/youcook2", split="test")
     print(f"  Loaded {len(ds)} clips  |  columns: {ds.column_names}")
 
-    # Build test cases
     all_cases = []
     for i, row in enumerate(ds):
         video_path_id = row.get('video_path', f'vid_{i}')
         vid_id = os.path.splitext(os.path.basename(str(video_path_id)))[0]
-        captions = row.get('caption', [])
-        if isinstance(captions, list):
-            # Pick shortest caption as ground truth
-            expected = min(captions, key=len) if captions else ''
-        else:
-            expected = str(captions)
+        expected = str(row.get('caption', '')).strip()
         if not expected:
             continue
         all_cases.append({
@@ -134,7 +127,7 @@ def run_msrvtt_benchmark(
 
     # ── 3. Run inference ───────────────────────────────────────────────────────
     print(f"\n{'='*70}")
-    print("RUNNING MSRVTT BENCHMARK")
+    print("RUNNING YOUCOOK2 BENCHMARK")
     print(f"{'='*70}\n")
 
     results = []
@@ -173,7 +166,7 @@ def run_msrvtt_benchmark(
         gc.collect()
         torch.cuda.empty_cache()
 
-        tc_out = os.path.join(output_dir, video_id) if save_results else 'msrvtt_analysis'
+        tc_out = os.path.join(output_dir, video_id) if save_results else 'youcook2_analysis'
         os.makedirs(tc_out, exist_ok=True)
 
         try:
@@ -234,7 +227,7 @@ def run_msrvtt_benchmark(
     fail_cnt = sum(1 for r in results if r['status'] == 'FAILED')
 
     print(f"\n{'='*70}")
-    print("MSRVTT BENCHMARK — FINAL RESULTS")
+    print("YOUCOOK2 BENCHMARK — FINAL RESULTS")
     print(f"{'='*70}")
     print(f"{'Video ID':<20} {'Status':<10} {'Conf':<8} {'Correct':<8} {'Prediction':<30} {'Expected'}")
     print("-" * 100)
@@ -248,7 +241,7 @@ def run_msrvtt_benchmark(
     print(f"{'─'*70}\n")
 
     if save_results:
-        csv_path = os.path.join(output_dir, f'msrvtt_results_{datetime.now():%Y%m%d_%H%M%S}.csv')
+        csv_path = os.path.join(output_dir, f'youcook2_results_{datetime.now():%Y%m%d_%H%M%S}.csv')
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=[
                 'video_id', 'question', 'expected', 'prediction',
@@ -262,4 +255,4 @@ def run_msrvtt_benchmark(
 
 
 if __name__ == '__main__':
-    run_msrvtt_benchmark()
+    run_youcook2_benchmark()
