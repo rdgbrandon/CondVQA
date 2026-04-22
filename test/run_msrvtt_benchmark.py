@@ -40,23 +40,32 @@ def is_correct(prediction, expected):
     return pred == exp or exp in pred or pred in exp
 
 
-def frames_to_video(raw_bytes, output_path, num_frames, height, width, channels, fps=1):
-    """Reconstruct mp4 from raw pixel bytes (same as run_msvd_benchmark)."""
+def base64_frames_to_video(frame_b64_list, output_path, fps=1):
+    """Reconstruct mp4 from a list of base64-encoded JPEG frame strings."""
     import cv2
-    if not raw_bytes or num_frames == 0 or height == 0 or width == 0:
+    from PIL import Image
+    from io import BytesIO
+    from base64 import b64decode
+
+    if not frame_b64_list:
         return False
-    arr = np.frombuffer(raw_bytes, dtype=np.uint8)
-    expected = num_frames * height * width * channels
-    if len(arr) < expected:
+
+    frames = []
+    for b64 in frame_b64_list:
+        try:
+            img = Image.open(BytesIO(b64decode(b64))).convert('RGB')
+            frames.append(np.array(img))
+        except Exception:
+            continue
+
+    if not frames:
         return False
-    arr = arr[:expected].reshape(num_frames, height, width, channels)
+
+    h, w = frames[0].shape[:2]
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    for i in range(num_frames):
-        frame = arr[i]
-        if channels == 3:
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        writer.write(frame)
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+    for frame in frames:
+        writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
     writer.release()
     return os.path.exists(output_path) and os.path.getsize(output_path) > 0
 
@@ -64,7 +73,7 @@ def frames_to_video(raw_bytes, output_path, num_frames, height, width, channels,
 def run_msrvtt_benchmark(
     qa_json_path=None,
     video_dir=None,
-    hf_dataset='morpheushoc/msrvtt-qa',
+    hf_dataset='MMInstruction/M3IT',
     model=None,
     processor=None,
     text_model=None,
@@ -83,7 +92,7 @@ def run_msrvtt_benchmark(
     Run CondVLM against a random 200-sample subset of MSRVTT-QA test split.
 
     Two loading modes (first available wins):
-      A) HuggingFace: set hf_dataset (default 'morpheushoc/msrvtt-qa') — no local files needed
+      A) HuggingFace: set hf_dataset (default 'MMInstruction/M3IT', config 'msrvtt-qa') — no local files needed
       B) Local:       set qa_json_path + video_dir
 
     Args:
@@ -119,35 +128,22 @@ def run_msrvtt_benchmark(
         video_dir = os.path.join(data_dir, 'videos')
         os.makedirs(video_dir, exist_ok=True)
 
-        print(f"\n[1/3] Loading MSRVTT-QA from HuggingFace ({hf_dataset}) ...")
-        ds = load_dataset(hf_dataset, split='test')
+        print(f"\n[1/3] Loading MSRVTT-QA from HuggingFace ({hf_dataset}, config=msrvtt-qa) ...")
+        ds = load_dataset(hf_dataset, 'msrvtt-qa', split='test')
         print(f"  Loaded {len(ds)} rows  |  columns: {ds.column_names}")
 
         all_cases = []
         for i, row in enumerate(ds):
-            video_path_id = row.get('video_path', f'vid_{i}')
-            vid_id = os.path.splitext(os.path.basename(str(video_path_id)))[0]
-            qa_pairs = row.get('qa', [])
-            if not qa_pairs:
-                continue
-            first_qa = qa_pairs[0] if isinstance(qa_pairs, list) else qa_pairs
-            if isinstance(first_qa, list) and len(first_qa) >= 2:
-                question, answer = first_qa[0], first_qa[1]
-            elif isinstance(first_qa, dict):
-                question, answer = first_qa.get('question', ''), first_qa.get('answer', '')
-            else:
-                continue
-            if not question:
+            question = row.get('inputs', '').strip()
+            answer   = row.get('outputs', '').strip()
+            frames   = row.get('image_base64_str', [])
+            if not question or not answer:
                 continue
             all_cases.append({
-                'video_id':      vid_id,
-                'question':      question,
-                'expected':      str(answer),
-                'binary_frames': row.get('binary_frames'),
-                'num_frames':    row.get('num_frames', 0),
-                'height':        row.get('height', 0),
-                'width':         row.get('width', 0),
-                'channels':      row.get('channels', 3),
+                'video_id':       f'msrvtt_{i:05d}',
+                'question':       question,
+                'expected':       answer,
+                'frame_b64_list': frames,
             })
     else:
         print(f"\n[1/3] Loading MSRVTT-QA annotations from {qa_json_path} ...")
@@ -192,11 +188,8 @@ def run_msrvtt_benchmark(
 
         if use_hf:
             if not os.path.exists(candidate):
-                ok = frames_to_video(
-                    tc.get('binary_frames'), candidate,
-                    num_frames=tc.get('num_frames', 0), height=tc.get('height', 0),
-                    width=tc.get('width', 0), channels=tc.get('channels', 3),
-                    fps=fps_sample,
+                ok = base64_frames_to_video(
+                    tc.get('frame_b64_list', []), candidate, fps=fps_sample,
                 )
                 if ok:
                     video_path = candidate
