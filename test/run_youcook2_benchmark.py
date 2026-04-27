@@ -21,7 +21,7 @@ from src.model_loader import load_text_model
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-QUESTION    = "What is being prepared or cooked in this video?"
+QUESTION    = "When you see food being prepared, what food do you see?"
 
 
 def frames_to_video(raw_bytes, output_path, num_frames, height, width, channels, fps=1):
