@@ -31,11 +31,7 @@ def load_model(model_id="llava-hf/llava-onevision-qwen2-0.5b-ov-hf"):
         ignore_mismatched_sizes=False
     )
 
-    # lm_head is tied to embed_tokens in this checkpoint — re-tie explicitly
-    # to avoid randomly initialised output weights after 4-bit loading
-    if model.lm_head.weight.data_ptr() != model.model.embed_tokens.weight.data_ptr():
-        model.lm_head.weight = model.model.embed_tokens.weight
-
+    model.tie_weights()
     model.eval()
     print("[OK] Model loaded successfully")
 
