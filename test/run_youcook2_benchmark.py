@@ -63,7 +63,7 @@ def run_youcook2_benchmark(
     data_dir=None,
     max_samples=200,
     seed=42,
-    fps_sample=1,
+    fps_sample=0.05,
     confidence_threshold=0.5,
     aggregation_method='most_confident',
     save_results=True,
