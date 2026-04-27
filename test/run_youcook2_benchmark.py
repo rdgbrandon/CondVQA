@@ -91,8 +91,7 @@ def run_youcook2_benchmark(
 
     # ── 1. Load dataset ────────────────────────────────────────────────────────
     print("\n[1/3] Loading YouCook2 from HuggingFace (morpheushoc/youcook2, streaming) ...")
-    ds = load_dataset("morpheushoc/youcook2", split="test", streaming=True)
-    ds = ds.shuffle(seed=seed, buffer_size=500)
+    ds = load_dataset("morpheushoc/youcook2", split="val", streaming=True)
 
     sample = []
     for i, row in enumerate(ds):
