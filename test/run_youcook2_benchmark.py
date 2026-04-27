@@ -94,12 +94,16 @@ def run_youcook2_benchmark(
     ds = load_dataset("morpheushoc/youcook2", split="val", streaming=True)
 
     sample = []
+    seen_ids = set()
     for i, row in enumerate(ds):
         video_path_id = row.get('video_path', f'vid_{i}')
         vid_id = os.path.splitext(os.path.basename(str(video_path_id)))[0]
+        if vid_id in seen_ids:
+            continue
         expected = str(row.get('caption', '')).strip()
         if not expected:
             continue
+        seen_ids.add(vid_id)
         sample.append({
             'video_id':      vid_id,
             'question':      QUESTION,
@@ -113,7 +117,7 @@ def run_youcook2_benchmark(
         if len(sample) >= max_samples:
             break
 
-    print(f"  Collected {len(sample)} clips (seed={seed}, streaming)")
+    print(f"  Collected {len(sample)} unique videos (seed={seed}, streaming)")
 
     # ── 2. Load models ─────────────────────────────────────────────────────────
     print("\n[2/3] Loading models...")
