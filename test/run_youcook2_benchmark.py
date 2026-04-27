@@ -90,18 +90,18 @@ def run_youcook2_benchmark(
     os.makedirs(output_dir, exist_ok=True)
 
     # ── 1. Load dataset ────────────────────────────────────────────────────────
-    print("\n[1/3] Loading YouCook2 from HuggingFace (morpheushoc/youcook2) ...")
-    ds = load_dataset("morpheushoc/youcook2", split="test")
-    print(f"  Loaded {len(ds)} clips  |  columns: {ds.column_names}")
+    print("\n[1/3] Loading YouCook2 from HuggingFace (morpheushoc/youcook2, streaming) ...")
+    ds = load_dataset("morpheushoc/youcook2", split="test", streaming=True)
+    ds = ds.shuffle(seed=seed, buffer_size=500)
 
-    all_cases = []
+    sample = []
     for i, row in enumerate(ds):
         video_path_id = row.get('video_path', f'vid_{i}')
         vid_id = os.path.splitext(os.path.basename(str(video_path_id)))[0]
         expected = str(row.get('caption', '')).strip()
         if not expected:
             continue
-        all_cases.append({
+        sample.append({
             'video_id':      vid_id,
             'question':      QUESTION,
             'expected':      expected,
@@ -111,10 +111,10 @@ def run_youcook2_benchmark(
             'width':         row.get('width', 0),
             'channels':      row.get('channels', 3),
         })
+        if len(sample) >= max_samples:
+            break
 
-    random.seed(seed)
-    sample = random.sample(all_cases, min(max_samples, len(all_cases)))
-    print(f"  Sampled {len(sample)} clips (seed={seed})")
+    print(f"  Collected {len(sample)} clips (seed={seed}, streaming)")
 
     # ── 2. Load models ─────────────────────────────────────────────────────────
     print("\n[2/3] Loading models...")
