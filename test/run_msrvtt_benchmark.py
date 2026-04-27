@@ -93,7 +93,6 @@ def run_msrvtt_benchmark(
     # ── 1. Load dataset ────────────────────────────────────────────────────────
     print("\n[1/3] Loading MSRVTT from HuggingFace (morpheushoc/msrvtt, streaming) ...")
     ds = load_dataset("morpheushoc/msrvtt", split="test", streaming=True)
-    ds = ds.shuffle(seed=seed, buffer_size=500)
 
     sample = []
     for i, row in enumerate(ds):
